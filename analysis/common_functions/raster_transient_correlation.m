@@ -1,8 +1,8 @@
-% this is the function that does the analysis like what we did for
-% unpredicted reward in DA/ACh paper:
+% function output = raster_transient_correlation(ref_raster,corr_raster,polarity,varargin)
 %
-% i.e., for unpredicted reward: at what temporal latency is ACh correlated 
-% with DA peak magnitude
+%
+% Example use case: for unpredicted reward: at what temporal latency is 
+% trial-by-trial ACh correlated with trial-by-trial DA peak magnitude
 %
 %
 % inputs: 
@@ -24,6 +24,10 @@
 % center_transient: if set to 1, each trial will center the peak or trough
 %       of the transient as t=0, otherwise the average peak or trough time
 %       will be used as t=0
+%
+% output is a struct with lots of information (see bottom for details)
+% 
+% 
 %
 % Mai-Anh Vu
 % 2025/09/16
@@ -144,7 +148,7 @@ centered_ind = sub2ind(size(corr_raster),wind_idx_tp_centered(:),corr_idx_j(:),c
 corr_raster_centered(~isnan(centered_ind)) = corr_raster(centered_ind(~isnan(centered_ind)));
 
 % now run the correlations
-output.corr.rho = nan(size(corr_raster_centered,1),size(corr_raster_centered,2));
+output.corr.corr_r = nan(size(corr_raster_centered,1),size(corr_raster_centered,2));
 output.corr.p = nan(size(corr_raster_centered,1),size(corr_raster_centered,2));
 for r = 1:size(ref_tr_mag,2)
     this_ref_tr_mag = ref_tr_mag(:,r);
@@ -153,39 +157,39 @@ for r = 1:size(ref_tr_mag,2)
         this_corr_raster = squeeze(corr_raster_centered(t,r,:));
         keep_idx = ~isnan(this_ref_tr_mag) & ~isnan(this_corr_raster);
         if sum(keep_idx)>10
-            [rho,p] = corr(this_ref_tr_mag(keep_idx),this_corr_raster(keep_idx,:));           
-            output.corr.rho(t,r) = rho;
+            [corr_r,p] = corr(this_ref_tr_mag(keep_idx),this_corr_raster(keep_idx,:));           
+            output.corr.corr_r(t,r) = corr_r;
             output.corr.p(t,r) = p;
         end
     end
 end
 
 
-% results: best overall rho
-[~,best_rho_idx] = max(abs(output.corr.rho),[],1);
-[~,best_rho_lin_idx] = max(abs(output.corr.rho),[],1,'linear');
-output.corr.best_rho = vec(output.corr.rho(best_rho_lin_idx));
-output.corr.best_p = vec(output.corr.p(best_rho_lin_idx));
-output.corr.best_rho_idx = vec(best_rho_idx);
-output.corr.best_rho_input_idx = vec(corr_idx_of_int(best_rho_idx));
+% results: dominant (largest magnitude) corr_r
+[~,dominant_corr_r_idx] = max(abs(output.corr.corr_r),[],1);
+[~,dominant_corr_r_lin_idx] = max(abs(output.corr.corr_r),[],1,'linear');
+output.corr.dominant_corr_r = vec(output.corr.corr_r(dominant_corr_r_lin_idx));
+output.corr.dominant_p = vec(output.corr.p(dominant_corr_r_lin_idx));
+output.corr.dominant_corr_r_idx = vec(dominant_corr_r_idx);
+output.corr.dominant_corr_r_input_idx = vec(corr_idx_of_int(dominant_corr_r_idx));
 
 
-% results: max rho
-[~,best_rho_idx] = max(output.corr.rho,[],1);
-[~,best_rho_lin_idx] = max(output.corr.rho,[],1,'linear');
-output.corr.max_rho = vec(output.corr.rho(best_rho_lin_idx));
-output.corr.max_p = vec(output.corr.p(best_rho_lin_idx));
-output.corr.max_rho_idx = vec(best_rho_idx);
-output.corr.max_rho_input_idx = vec(corr_idx_of_int(best_rho_idx));
+% results: max corr_r
+[~,dominant_corr_r_idx] = max(output.corr.corr_r,[],1);
+[~,dominant_corr_r_lin_idx] = max(output.corr.corr_r,[],1,'linear');
+output.corr.max_corr_r = vec(output.corr.corr_r(dominant_corr_r_lin_idx));
+output.corr.max_p = vec(output.corr.p(dominant_corr_r_lin_idx));
+output.corr.max_corr_r_idx = vec(dominant_corr_r_idx);
+output.corr.max_corr_r_input_idx = vec(corr_idx_of_int(dominant_corr_r_idx));
 
 
-% results: min rho
-[~,best_rho_idx] = min(output.corr.rho,[],1);
-[~,best_rho_lin_idx] = min(output.corr.rho,[],1,'linear');
-output.corr.min_rho = vec(output.corr.rho(best_rho_lin_idx));
-output.corr.min_p = vec(output.corr.p(best_rho_lin_idx));
-output.corr.min_rho_idx = vec(best_rho_idx);
-output.corr.min_rho_input_idx = vec(corr_idx_of_int(best_rho_idx));
+% results: min corr_r
+[~,dominant_corr_r_idx] = min(output.corr.corr_r,[],1);
+[~,dominant_corr_r_lin_idx] = min(output.corr.corr_r,[],1,'linear');
+output.corr.min_corr_r = vec(output.corr.corr_r(dominant_corr_r_lin_idx));
+output.corr.min_p = vec(output.corr.p(dominant_corr_r_lin_idx));
+output.corr.min_corr_r_idx = vec(dominant_corr_r_idx);
+output.corr.min_corr_r_input_idx = vec(corr_idx_of_int(dominant_corr_r_idx));
 
 
 % some useful info

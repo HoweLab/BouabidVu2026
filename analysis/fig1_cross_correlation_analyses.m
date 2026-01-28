@@ -4,10 +4,14 @@ addpath(fullfile(pwd,'common_functions'))
 data_dir = 'D:';
 mice = {'UG27','UG28','UG29','UG30','UG31'};
 fib = cohort_fib_table(data_dir,mice);
+save_dir1 = fullfile(data_dir,'results','1_cross_corr');
+if ~exist(save_dir1,'dir')
+    mkdir(save_dir1)
+end
 sr = 18; % sampling rate
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%% 1. concatenate data 
+% 1. concatenate data 
 nanpad = sr*5; % put a bunch of nans between days so the cross-correlation sliding doesn't combine data across days
 concat_data = get_concat_data(mice,fib,data_dir,nanpad);
 
@@ -63,12 +67,12 @@ results.sig_moran = local_morans_I_sig_moran(results.smooth,...
 
 % save for convenience
 results.str = str;
-save(fullfile(data_dir,'results','1_cross_corr','cross_corr_dominant_results.mat'),'-struct','results')
+save(fullfile(save_dir1,'cross_corr_dominant_results.mat'),'-struct','results')
     
 %%   
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 4. results figs
-results = load(fullfile(data_dir,'results','1_cross_corr','cross_corr_dominant_results.mat'));
+results = load(fullfile(save_dir1,'cross_corr_dominant_results.mat'));
 
 % scatter plot
 plot_lag_corr_scatter(results.vals.r,results.vals.lag/18*1000,'lat_bins',[-1000:(1000/9):1000]);
