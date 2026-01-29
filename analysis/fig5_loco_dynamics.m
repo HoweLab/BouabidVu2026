@@ -251,14 +251,14 @@ for m = 1:numel(mice)
     output.(mouse).term = these_offsets; % termination
  
     % invigorations
-    results.(mouse).invig = nan(numel(output.(mouse).init),1);
+    output.(mouse).invig = nan(numel(output.(mouse).init),1);
     for i = 1:numel(output.(mouse).init)
         i1 = output.(mouse).init(i)-1;
         i2 = output.(mouse).term(i)+1;
         this_acc = concat_data.(mouse).acc(i1:i2);
         loc_max = find(islocalmax(this_acc));
         if ~isempty(loc_max)
-            results.(mouse).invig(i) = loc_max(1) + i1-1;
+            output.(mouse).invig(i) = loc_max(1) + i1-1;
         end        
     end 
 end
@@ -314,21 +314,26 @@ mice = fieldnames(concat_data);
 for m = 1:numel(mice)
     mouse = mice{m};    
     invig_glm = fit_invig_GLM_get_resid(concat_data,loco_events,mouse);
+    these_invigs = loco_events.(mouse).invig(...
+        (loco_events.(mouse).term-loco_events.(mouse).init)>=(loco_dur*sr));
+    
     % now get trg avg on residuals
-    for n = 1:numel(neuromods)
-        invig_events = find(invig_glm.(neuromods{n}).roi_idx_01.invig_events==1);
+    for n = 1:numel(neuromods)        
         resid_act = struct2array(structfun(@(x) x.invig_resid,invig_glm.(neuromods{n}),...
             'UniformOutput',false));
         invig_sig_pos = structfun(@(x) ~isempty(strfind(transpose(vec(...
             x.mdl.invig.p < 0.05 & x.mdl.invig.mu > 0)),[1 1 1])),invig_glm.(neuromods{n}));
         invig_sig_neg = structfun(@(x) ~isempty(strfind(transpose(vec(...
             x.mdl.invig.p < 0.05 & x.mdl.invig.mu < 0)),[1 1 1])),invig_glm.(neuromods{n}));
-        eta = eventTriggeredAverage(resid_act,invig_events,eta_idx(1),eta_idx(end),'nullDistr',0);
-        output.(mouse).(neuromods{n}) = eta.activity;
+        eta = eventTriggeredAverage(resid_act,these_invigs,eta_idx(1),eta_idx(end),'nullDistr',0);
+        eta_act = eta.activity;
+        eta_act = eta_act(:,:,sum(isnan(eta_act),[1 2])<prod(size(eta_act,[1 2])));
+        output.(mouse).(neuromods{n}) = eta_act;
         output.(mouse).([neuromods{n} '_sig']) = [invig_sig_pos invig_sig_neg];
     end
 end
 end
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % fit invigoration GLM and get residuals (model out inits, vel, acc)
@@ -400,10 +405,10 @@ for n = 1:numel(neuromods)
         tbl = struct2table(preds);
         tbl.(neuromods{n}) = data.(neuromods{n})(:,r);
         these_idx = data_to_model(~isnan(tbl.(neuromods{n})(data_to_model)));
-        tbl = tbl(these_idx,:);
+        mdl_tbl = tbl(these_idx,:);
         
-        if ~isempty(tbl)
-            mdl = fitglm(tbl,this_mdlSpec);
+        if ~isempty(mdl_tbl)
+            mdl = fitglm(mdl_tbl,this_mdlSpec);
 
             tmp = struct;
             tmp.info.idx = these_idx;
@@ -439,7 +444,7 @@ for n = 1:numel(neuromods)
             
             % now get residual using orig table so all ROIs are same size
             % predictors
-            pred_mat = table2array(tbl(:,1:end-1)); % ignore the neuromod column
+            pred_mat = table2array(mdl_tbl(:,1:end-1)); % ignore the neuromod column
             pred_mat = [ones(size(pred_mat(:,1))) pred_mat]; % add intercept
             % set invig to 0 
             coefs = mdl.Coefficients.Estimate;
@@ -447,21 +452,18 @@ for n = 1:numel(neuromods)
             % predict 
             pred_sig = pred_mat*coefs;
             % subtract to keep residuals
-            resid_sig = tbl.(neuromods{n})-pred_sig;
+            resid_sig = mdl_tbl.(neuromods{n})-pred_sig;
                    
             % output
             output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).mdl = tmp;
-            output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).invig_resid = nan(numel(data_to_model),1);
-            output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).invig_resid(these_idx) = vec(resid_sig);
-            output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).init_events = tbl.init10;
-            output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).invig_events = tbl.invig10;
-            
+            output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).invig_resid = nan(size(tbl,1),1);
+            output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).invig_resid(these_idx) = vec(resid_sig);          
         else
             % fill into our bigger struct
             output.(neuromods{n}).(['roi_idx_' sprintf('%02d',roi_i)]).mdl = [];
             output.(neuromods{n}).(['roi_idx_' sprintf('%02d',roi_i)]).invig_resid = [];
-            output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).init_events = tbl.init10;
-            output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).invig_events = tbl.invig10;
+            output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).init_events = mdl_tbl.init10;
+            output.(neuromods{n}).(['roi_idx_' sprintf('%02d',r)]).invig_events = mdl_tbl.invig10;
             clear tmp;
         end
     end    

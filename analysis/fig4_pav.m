@@ -78,6 +78,13 @@ for e = 1:size(epochs,1)
     results.sig_moran = local_morans_I_sig_moran(results.smooth,...
         results.moran,null_moran,'dominant','mask',str.striatum_mask);  
 
+    % correlation hotspot comparison
+    results.sig_moran.corr_hotspot_overlap = hotspot_comparison(...
+        results.sig_moran.rand,results.sig_moran.vox,...
+        str.info.DV,str.info.ML,str.info.AP,...
+        corr_hotspot.sig_moran.rand,corr_hotspot.sig_moran.vox,...
+        corr_hotspot.str.info.DV,corr_hotspot.str.info.ML,corr_hotspot.str.info.AP);
+    
     % save for convenience
     results.str = str;
     save(fullfile(save_dir4,[strjoin(epochs(e,1:2),'_') '_dominant_results.mat']),'-struct','results')
@@ -109,6 +116,10 @@ for e = 1:2 % plot light trials results for paper
     % in-v-out violin
     plot_violin_in_out(results.vals.r(results.vals.sig_da==1),...
         this_fib,corr_hotspot.str,corr_hotspot.sig_moran.map)
+    
+    % venn diagrams of hotspot comparisons (title has #voxels)
+    plot_hotspot_comparison_venn(results.sig_moran.corr_hotspot_overlap)
+
 end
 
 
