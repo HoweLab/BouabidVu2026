@@ -199,6 +199,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % get_all_pav_cc
 function pav_cc = get_all_pav_cc(pav_data,fib,epochs,DA_tr,varargin)
+
 %%%  parse optional inputs %%%
 ip = inputParser;
 ip.addParameter('eta_idx',-9:54)
