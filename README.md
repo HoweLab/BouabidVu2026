@@ -18,7 +18,7 @@ The code included in this repository assume the following data organization:
    - D:/UG27/240214
    - D:/UG27/240214r
    - D:/UG27/240220
-2. Within each of the experiment folders are the extracted fluorescence files (has "ROIs" in the name) and behavior variable files (has "ttlIn1" or "ttlIn2" in the name). Since these are dual DA-ACh recordings, these data have been aligned into a single file with the file name format MOUSE_EXPDIR.mat, e.g., D:/UG27/240214r/UG27_240214r.mat. These files contains a struct with the following fields:
+2. Within each of the experiment folders are the extracted fluorescence files (has "ROIs" in the name) and behavior variable files (has "ttlIn1" or "ttlIn2" in the name). These data have been preprocessed (channels aligned, etc) into a single file with the file name format MOUSE_EXPDIR.mat, e.g., D:/UG27/240214r/UG27_240214r.mat. These files contains a struct with the following fields:
      - DA -- fluorescence data for DA
      - ACh -- fluorescence data for ACh
      - behav_DA -- behavior data aligned to DA fluorescence recording
