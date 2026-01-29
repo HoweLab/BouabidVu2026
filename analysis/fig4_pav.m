@@ -4,8 +4,10 @@ addpath(fullfile(pwd,'common_functions'))
 data_dir = 'D:';
 mice = {'AD1','AD2','AD3'};
 fib = cohort_fib_table(data_dir,mice);
+% load corr hotspot
 save_dir1 = fullfile(data_dir,'results','1_cross_corr');
 corr_hotspot = load(fullfile(save_dir1,'cross_corr_dominant_results.mat'),'sig_moran','str');
+% directory for saving (interim) results
 save_dir4 = fullfile(data_dir,'results','4_pav');
 if ~exist(save_dir4,'dir')
     mkdir(save_dir4)
