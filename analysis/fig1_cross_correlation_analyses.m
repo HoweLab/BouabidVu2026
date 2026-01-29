@@ -78,7 +78,9 @@ results = load(fullfile(save_dir1,'cross_corr_dominant_results.mat'));
 plot_lag_corr_scatter(results.vals.r,results.vals.lag/18*1000,'lat_bins',[-1000:(1000/9):1000]);
 
 % smooth maps
-plot_smooth_maps(results.smooth,results.str,'other_vols',{results.sig_moran.map});
+outlines = get_mask_projection_outlines(results.sig_moran.map,...
+    results.str,'apply_str_mask',1,'proj_orientations',{'axial','sagittal'});    
+plot_smooth_maps(results.smooth,results.str,'outlines',outlines);
 
 % in-v-out violin
 plot_violin_in_out(results.vals.r,fib,results.str,results.sig_moran.map)
@@ -151,12 +153,12 @@ function cc_results = get_cross_corr_results(concat_data,mice,fib,lag)
     cc_results.corr.p = nan(size(fib,1),numel(-lag:lag));
     cc_results.corr.n = nan(size(fib,1),numel(-lag:lag));
     
-    which_rho = {'min','max','dominant'};
-    for i = 1:numel(which_rho)
-        cc_results.r.(which_rho{i}) = nan(size(fib,1),1);
-        cc_results.lag.(which_rho{i}) = nan(size(fib,1),1);
-        cc_results.p.(which_rho{i}) = nan(size(fib,1),1);
-        cc_results.n.(which_rho{i}) = nan(size(fib,1),1);
+    which_r = {'min','max','dominant'};
+    for i = 1:numel(which_r)
+        cc_results.r.(which_r{i}) = nan(size(fib,1),1);
+        cc_results.lag.(which_r{i}) = nan(size(fib,1),1);
+        cc_results.p.(which_r{i}) = nan(size(fib,1),1);
+        cc_results.n.(which_r{i}) = nan(size(fib,1),1);
     end
     for m = 1:numel(mice)
         mouse = mice{m};

@@ -93,8 +93,14 @@ for e = 1:numel(evs)
     % directionality index histograms
     plot_directionality_index_histogram(results.vals.dir_index)
     
-    % smooth maps of occurrence rate
-    plot_smooth_maps(results.smooth,results.str,'other_vols',{results.sig_moran.map});
+    % smooth maps of occurrence rate, put on contours for hotspots
+    tr_outlines = get_mask_projection_outlines(results.sig_moran.map,...
+        results.str,'apply_str_mask',1,'proj_orientations',{'axial','sagittal'});
+    corr_outlines = get_mask_projection_outlines(corr_hotspot.sig_moran.map,...
+        corr_hotspot.str,'apply_str_mask',1,'proj_orientations',{'axial','sagittal'});
+    outlines.axial = [tr_outlines.axial; corr_outlines.axial];
+    outlines.sagittal = [tr_outlines.sagittal; corr_outlines.sagittal];
+    plot_smooth_maps(results.smooth,results.str,'outlines',outlines);
 
     % venn diagrams of hotspot comparisons (title has #voxels)
     plot_hotspot_comparison_venn(results.sig_moran.corr_hotspot_overlap)

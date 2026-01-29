@@ -12,14 +12,14 @@ function plot_smooth_maps(this_map,str,varargin)
     %%%  parse optional inputs %%%
     ip = inputParser;
     % directories and atlas: see https://github.com/HoweLab/MultifiberLocalization    
-    ip.addParameter('other_vols',[]);
+    ip.addParameter('outlines',[]); % outlines to plot (see get_mask_projection_outlines)
     ip.addParameter('cmap_bounds',[]);   
     ip.addParameter('cmap_option','redblue');   
     ip.parse(varargin{:});
     for j=fields(ip.Results)'
         eval([j{1} '=ip.Results.' j{1} ';']);
     end
-
+    
     % calculate projections
     axial_vol = get_volume_projection(this_map,'axial','mask',str.striatum_mask);
     sagittal_vol = get_volume_projection(this_map,'sagittal','mask',str.striatum_mask);
@@ -30,37 +30,21 @@ function plot_smooth_maps(this_map,str,varargin)
         cmap_bounds = [-1 1]*prctile(abs(axial_vol(:)),99.5);
     end
         
-    % get outlines of axial and sagittal mask projections for all masks
-    other_vols = [{double(str.striatum_mask)}; vec(other_vols)];
-    proj_orientations = {'axial','sagittal'};
-    str_coord_order.axial = [2 3];
-    str_coord_order.sagittal = [3 1];
-    outlines = struct;
-    for p = 1:numel(proj_orientations)
-        outlines.(proj_orientations{p}) = [];
-        these_coords = str_coord_order.(proj_orientations{p});
-        for v = 1:numel(other_vols)
-            if v > 1
-                this_vol = get_volume_projection(other_vols{v},...
-                    proj_orientations{p},'mask',str.striatum_mask,...
-                    'proj','max');
-            else
-                this_vol = get_volume_projection(other_vols{v},...
-                    proj_orientations{p},'proj','max');
-            end
-            b = bwboundaries(this_vol);
-            for i = 1:numel(b)
-                tmp_x = str.info.(str.info.dimension_order{1,these_coords(1)});
-                tmp_x = tmp_x(b{i}(:,2));
-                tmp_y = str.info.(str.info.dimension_order{1,these_coords(2)});            
-                tmp_y = tmp_y(b{i}(:,1));
-                outlines.(proj_orientations{p}) = ...
-                    [outlines.(proj_orientations{p});{tmp_x} {tmp_y}];
-            end
-        end
+    % get outlines of axial and sagittal mask projections and add to the 
+    % top of the list of outlines to plot
+    if isempty(outlines)
+        outlines.axial = [];
+        outlines.sagittal = [];
     end
-    disp(outlines)
-     
+    proj_orientations = {'axial','sagittal'};
+    str_outlines = get_mask_projection_outlines(str.striatum_mask,str,...
+        'apply_str_mask',0,'proj_orientations',proj_orientations);
+    for p = 1:numel(proj_orientations)
+        outlines.(proj_orientations{p}) = ...
+            [str_outlines.(proj_orientations{p});...
+            outlines.(proj_orientations{p})];
+    end
+         
     %%% now plot
     figure('Position',[100 100 450 800])
     
