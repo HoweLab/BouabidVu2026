@@ -1,6 +1,6 @@
 # BouabidVu2026
 Analysis code to accompany Bouabid, Vu, et al., 2026: https://www.biorxiv.org/content/10.64898/2026.01.20.700614v1.
-The vast majority of the code here was written by Mai-Anh Vu, except where indicated otherwise, and was written and executed in Matlab2020b.
+The code here was written by Mai-Anh Vu, except where indicated otherwise, and was written and executed in Matlab2020b.
 
 ## Contents
 The code included in this repository assume data organization as detailed below
