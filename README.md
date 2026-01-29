@@ -12,7 +12,7 @@ The code included in this repository assume data organization as detailed below
 3. analysis/common_functions:
    - functions shared across analyses
 
-## Data Organization:
+## Data Organization
 The code included in this repository assume the following data organization:
 1. Within the data folder are folders for each mouse, and within each mouse's folder are folders for the date of each experiment. In cases where multiple experiments were conducted on the same day, those are separated into folders with a letter subscript at the end. For example:
    - D:/UG27/240214
