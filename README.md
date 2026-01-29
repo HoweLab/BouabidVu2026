@@ -8,7 +8,8 @@ The code included in this repository assume data organization as detailed below
 2. analysis:
    - each of the scripts here can be run to execute the analyses relevant to the main figure indicated and will generate associated plots
    - functions called within each script are either included at the bottom of the script, or, for functions shared across scripts, included in the common_functions folder
-     
+3. analysis/common_functions:
+   - functions shared across analyses
 
 ## Data Organization:
 The code included in this repository assume the following data organization:
