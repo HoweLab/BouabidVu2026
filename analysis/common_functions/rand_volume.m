@@ -49,10 +49,14 @@ function output = rand_volume(input_size,volume_size,varargin)
 
 end
 
-% generate a contiguous connected volume of desired size
+
+% generate a contiguous connected volume of desired size from within an
+% input mask
 function output_vol = get_rand_vol(input_vol,volume_size)
     rng('shuffle')
+    % output volume
     output_vol = zeros(size(input_vol));
+    % input mask indices
     input_vox = find(input_vol==1);
     % start with a seed voxel
     output_vol(input_vox(randsample(numel(input_vox),1))) = 1;
@@ -62,9 +66,9 @@ function output_vol = get_rand_vol(input_vol,volume_size)
     % of candidate voxels. Do this until we've reached the desired volume.
     while sum(output_vol(:))<volume_size
         candidate_voxels = find((imdilate(output_vol,strel('sphere',1))-output_vol)==1);
+        candidate_voxels = intersect(input_vox,candidate_voxels);
         n_samp = min([volume_size-sum(output_vol(:)) randi(floor(numel(candidate_voxels)/2))]);
         output_vol(candidate_voxels(randsample(numel(candidate_voxels),n_samp,'false'))) = 1;
     end
 end
     
-
