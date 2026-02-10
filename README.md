@@ -26,3 +26,20 @@ The code included in this repository assume the following data organization:
      - DA_idx -- the indices of the timepoints of the DA data that are included
      - ACh_idx -- the indices of the timepoints of the ACh data that are included
 3. In the mouse's data folder is a spreadsheet fiber_table.xlsx that contains localization information for all of the recording locations
+
+
+------------------
+##  License and Citation
+ 
+If you use use this code in your research, please cite: 
+
+Safa Bouabid*, Mai-Anh T. Vu*, Christian Noggle, Stefania Vietti-Michelina, Katherine Brimblecomb, Nicola Platt, Liangzhu Zhang, Anil Joshi, Stephanie Cragg, and Mark W. Howe.  (2026) [An anatomical hotspot for striatal dopamine-acetylcholine interactions during reward and movement](https://doi.org/10.64898/2026.01.20.700614).
+
+This repository is released under the [MIT License](https://opensource.org/license/mit) - see the [LICENSE](LICENSE) file for details.
+
+------------------
+## Acknowledgements
+
+This work was supported by the following funding sources: MWH - Aligning Science Across Parkinson’s **(ASAP-020370; ASAP-025192)** through the Michael J. Fox Foundation for Parkinson’s Research (MJFF), National Institute of Mental Health **(R01 MH125835)**, Whitehall Foundation Fellowship, Klingenstein-Simons Foundation Fellowship, Parkinson’s Foundation (Stanley Fahn Junior Faculty Award, **PF-SF-JFA-836662**); MTV - NIMH **F32MH120894**.
+
+  
