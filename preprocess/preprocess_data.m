@@ -312,3 +312,20 @@ function output = remove_artifact(roi,sr,varargin)
 
 end
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% has signal?
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function sig = get_signal_tr(Fc)
+    transients = get_transients(Fc);   
+    n_peaks = cellfun(@(x) numel(x),transients.pos_transients.peak);
+    n_troughs = cellfun(@(x) numel(x),transients.neg_transients.peak);
+    % we'll assume each transient is minimum duration (3 timepts), though
+    % many are longer
+    sig_peaks = 3*100*n_peaks./transpose(sum(~isnan(transients.roi)))>2.5;
+    sig_troughs = 3*100*n_troughs./transpose(sum(~isnan(transients.roi)))>2.5;
+    % we have signal if the rate of detected peaks or detected troughs 
+    % exceeds chance
+    sig = sig_peaks | sig_troughs;
+end
+

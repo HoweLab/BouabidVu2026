@@ -69,7 +69,7 @@ for m = 1:numel(mice)
 end
    
 % cohort 2
-mice = {'AD1','AD2','AD3','AD4','AD5','AD5'};
+mice = {'AD1','AD2','AD3','AD4','AD5','AD6'};
 for m = 1:numel(mice)
     mouse = mice{m};
     exp_dirs = dir(fullfile(data_dir,mouse));
