@@ -24,7 +24,7 @@ title([' p = ' sprintf('%0.3f',p)],'Interpreter','none')
 end
 
 
-function violinPlot(data,varargin)
+function violinPlotSingle(data,varargin)
 
 % violinPlot(data,'OptionalParam1',val1,'OptionalParam2,val2,...)
 % My own violin plot code based on https://github.com/bastibe/Violinplot-Matlab.
