@@ -30,7 +30,7 @@ The code included in this repository assume the following data organization:
 ------------------
 ## Data Availability
 
-Both raw datasets and processed and organized datasets are available as a [DANDI Archive](https://dandiarchive.org/dandiset/001692/0.260303.1724)
+Both raw datasets and processed and organized datasets are available as a [DANDISET](https://dandiarchive.org/dandiset/001692/0.260303.1724)
 
 ------------------
 ## System Requirements
