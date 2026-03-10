@@ -27,6 +27,21 @@ The code included in this repository assume the following data organization:
      - ACh_idx -- the indices of the timepoints of the ACh data that are included
 3. In the mouse's data folder is a spreadsheet fiber_table.xlsx that contains localization information for all of the recording locations
 
+------------------
+##  Requirements: 
+
+Version:
+- This code was written and executed in MATLAB2020b. It has not been tested for compatibility with other versions.
+
+MATLAB toolboxes:
+- Curve Fitting Toolbox
+- Image Processing Toolbox
+- Parallel Computing Toolbox
+- Signal Processing Toolbox
+- Statistics and Machine Learning Toolbox
+  
+Other dependencies:
+- [Red Blue Colormap](https://www.mathworks.com/matlabcentral/fileexchange/25536-red-blue-colormap)
 
 ------------------
 ##  License and Citation
@@ -38,7 +53,7 @@ Safa Bouabid*, Mai-Anh T. Vu*, Christian Noggle, Stefania Vietti-Michelina, Kath
 This repository is released under the [MIT License](https://opensource.org/license/mit) - see the [LICENSE](LICENSE) file for details.
 
 ------------------
-## Acknowledgements
+## Acknowledgments
 
 This work was supported by the following funding sources: MWH - Aligning Science Across Parkinson’s **(ASAP-020370; ASAP-025192)** through the Michael J. Fox Foundation for Parkinson’s Research (MJFF), National Institute of Mental Health **(R01 MH125835)**, Whitehall Foundation Fellowship, Klingenstein-Simons Foundation Fellowship, Parkinson’s Foundation (Stanley Fahn Junior Faculty Award, **PF-SF-JFA-836662**); MTV - NIMH **F32MH120894**.
 
