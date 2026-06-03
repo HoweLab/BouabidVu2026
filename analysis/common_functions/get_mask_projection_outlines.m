@@ -22,7 +22,7 @@ end
 % some hard-coded info
 str_coord_order.axial = [2 3];
 str_coord_order.sagittal = [3 1];
-str_coord_order.coronal = [1 2];
+str_coord_order.coronal = [2 1];
 
 for p = 1:numel(proj_orientations)
     output.(proj_orientations{p}) = [];
