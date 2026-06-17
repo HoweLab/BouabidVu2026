@@ -44,7 +44,7 @@ yline(0)
 set(gca,'YTickLabel',[],'FontSize',12)
 
 % scatter plot
-ax(3) = subplot(4,4,[5 6 7 9 10 11 13 14 5]);
+ax(3) = subplot(4,4,[5 6 7 9 10 11 13 14 15]);
 hold on
 for i = 1:max(clust_id)
     plot(corr_r(clust_id==i),corr_lat(clust_id==i),'o',...
