@@ -2,11 +2,11 @@
 %
 % plot axial and sagittal mean projections with striatal outlines
 % str = the returned output from get_striatum_vol_mask.m 
-% other_vals = a cell array of binary volumes, from which to draw contours
+% other_vals = a cell array of binary volumes, from which to draw contour
+% outlines
 %
-% will return 2 plots
-% one symmetric redblue one
-% one parula one
+% Mai-Anh Vu, 2026
+%
 function plot_smooth_maps(this_map,str,varargin)
 
     %%%  parse optional inputs %%%
