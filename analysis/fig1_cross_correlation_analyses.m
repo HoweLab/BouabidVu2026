@@ -84,7 +84,7 @@ end
 
 % 3aii. now based on a quick scan of local moran's
 % let's test the values around the mouse neighborhood and go up to 31
-widths_to_test = (map_results.moran.neighborhood.mouse_neighborhood.vox-4):2:31;
+widths_to_test = 3:2:31;
 if ~isfield(map_results,'moran') || ~isfield(map_results.moran,'neighborhood') || ...
     ~isfield(map_results.moran.neighborhood,'moran_neighborhood')
     tmp = struct;
