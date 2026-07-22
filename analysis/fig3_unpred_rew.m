@@ -1,7 +1,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % organization
 addpath(fullfile(pwd,'common_functions'))
-data_dir = 'D:';
+data_dir = 'G:';
 mice = {'UG27','UG28','UG29','UG30','UG31'};
 fib = cohort_fib_table(data_dir,mice);
 % load corr hotspot

@@ -31,75 +31,110 @@ f1 = plot_lag_hist_and_components(cc_lags_distr,lag);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 2. maps: interpolated
 
-% initialize output
-map_results = struct;
+% load if available
+map_results = load_if_exist(fullfile(save_dir1,'map_results.mat'));
 
 % size & striatum mask
-voxel_size = 0.05;
-str = get_striatum_vol_mask(...
-    [min(fib.fiber_bottom_AP) max(fib.fiber_bottom_AP)],... % AP_range
-    [min(fib.fiber_bottom_ML) max(fib.fiber_bottom_ML)],... % ML_range
-    [min(fib.fiber_bottom_DV) max(fib.fiber_bottom_DV)],... % DV_range
-    voxel_size);
-map_results.str = str;
+if ~isfield(map_results,'str')
+    voxel_size = 0.05;
+    str = get_striatum_vol_mask(...
+        [min(fib.fiber_bottom_AP) max(fib.fiber_bottom_AP)],... % AP_range
+        [min(fib.fiber_bottom_ML) max(fib.fiber_bottom_ML)],... % ML_range
+        [min(fib.fiber_bottom_DV) max(fib.fiber_bottom_DV)],... % DV_range
+        voxel_size);
+    map_results.str = str;
+end
 
 % vals
 map_results.vals.r.neg_lag = tanh(cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_neg_idx));
 map_results.vals.r.pos_lag = tanh(cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_pos_idx));
 
 % smooth maps
-lag_signs = {'neg','pos'};
-tmp = get_activity_map_interp([map_results.vals.r.neg_lag map_results.vals.r.pos_lag],...
-    fib, str.info.voxel_size,'AP_range',[min(str.info.AP) max(str.info.AP)],...
-    'ML_range',[min(str.info.ML) max(str.info.ML)],...
-    'DV_range',[min(str.info.DV) max(str.info.DV)],'gaussian_sigma',.25);  
-for i = 1:numel(lag_signs)
-    map_results.interp.([lag_signs{i} '_lag']).vol = tmp.(['vol_' sprintf('%02d',i)]).interp;   % interpolated volume
-    map_results.interp.([lag_signs{i} '_lag']).n = tmp.(['vol_' sprintf('%02d',i)]).n_mice;     % #mice contrib to each voxel
-    map_results.interp.([lag_signs{i} '_lag']).F = tmp.(['vol_' sprintf('%02d',i)]).interp_F;   % interpolant function
+if ~isfield(map_results,'info')
+    lag_signs = {'neg','pos'};
+    tmp = get_activity_map_interp([map_results.vals.r.neg_lag map_results.vals.r.pos_lag],...
+        fib, str.info.voxel_size,'AP_range',[min(str.info.AP) max(str.info.AP)],...
+        'ML_range',[min(str.info.ML) max(str.info.ML)],...
+        'DV_range',[min(str.info.DV) max(str.info.DV)],'incl_plot_info',1);  
+    for i = 1:numel(lag_signs)
+        map_results.interp.([lag_signs{i} '_lag']).vol = tmp.(['vol_' sprintf('%02d',i)]).interp;   % interpolated volume
+        map_results.interp.([lag_signs{i} '_lag']).n = tmp.(['vol_' sprintf('%02d',i)]).n_mice;     % #mice contrib to each voxel
+        map_results.interp.([lag_signs{i} '_lag']).F = tmp.(['vol_' sprintf('%02d',i)]).interp_F;   % interpolant function
+    end
+    map_results.info = tmp.info;
+    save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
 end
-save(fullfile(save_dir1,'smooth_maps.mat'),'-struct','map_results','-v7.3')
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 3. maps: moran
 lag_signs = {'neg','pos'};
 
 % 3a. first determine proper neighborhood cube width
-% i. first figure out a distance based on each mouse's coverage
-mouse_neighborhood = get_mouse_neighborhood_r(fib);
-mouse_neighborhood = max(structfun(@(x) x.r,mouse_neighborhood));
-% ii. now based on a quick scan of local moran's
-for i = 1:numel(lag_signs)
-    value_array = map_results.vals.r.([lag_signs{i} '_lag']);
-    
-moran_neighborhood = get_moran_neighborhood(fiber_table,value_array,voxel_size,...
-    [3:2:31],'n_it',500,...
-    'AP_range',[min(str.info.AP) max(str.info.AP)],...
-    'ML_range',[min(str.info.ML) max(str.info.ML)],...
-    'DV_range',[min(str.info.DV) max(str.info.DV)]);
-
-for i = 1:numel(lag_signs)
-    data = map_results.interp.([lag_signs{i} '_lag']).vol;
-    results.moran.([lag_signs{i} '_lag']) = local_morans_I(results.smooth,'weight_matrix',ones(21,21,21));
-
-
-    null_moran = local_morans_I_bootstrap_null(...
-        fib,results.vals.r,voxel_size,...
-        'AP_range',[min(str.info.AP) max(str.info.AP)],...
-        'ML_range',[min(str.info.ML) max(str.info.ML)],...
-        'DV_range',[min(str.info.DV) max(str.info.DV)],...
-        'gaussian_smooth_sigma',.25,'weight_matrix',ones(21,21,21));
+% 3ai. first figure out a distance based on each mouse's coverage
+if ~isfield(map_results,'moran') || ~isfield(map_results.moran,'neighborhood') || ...
+        ~isfield(map_results.moran.neighborhood,'mouse_neighborhood')
+    cohort_min_fib = round(mean(cellfun(@(x) sum(ismember(fib.mouse,x))^(1/3),mice)));
+    tmp = get_mouse_neighborhood_r(fib,'min_n_fibs',cohort_min_fib);
+    map_results.moran.neighborhood.mouse_neighborhood.n_fibs = cohort_min_fib;
+    map_results.moran.neighborhood.mouse_neighborhood.mm = max(structfun(@(x) x.r,tmp));
+    map_results.moran.neighborhood.mouse_neighborhood.vox = round(max(structfun(@(x) x.r,tmp))/map_results.str.info.voxel_size);
+    save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
 end
 
-% 
-% 
-% 
-% % significant hotspot
-% results.sig_moran = local_morans_I_sig_moran(results.smooth,...
-%     results.moran,null_moran,'dominant','mask',str.striatum_mask);  
-% 
-% % save for convenience
-% save(fullfile(save_dir1,'cross_corr_dominant_results.mat'),'-struct','results')
+% 3aii. now based on a quick scan of local moran's
+% let's test the values around the mouse neighborhood and go up to 31
+widths_to_test = (map_results.moran.neighborhood.mouse_neighborhood.vox-4):2:31;
+if ~isfield(map_results,'moran') || ~isfield(map_results.moran,'neighborhood') || ...
+    ~isfield(map_results.moran.neighborhood,'moran_neighborhood')
+    tmp = struct;
+    for i = 1:numel(lag_signs)
+        value_array = map_results.vals.r.([lag_signs{i} '_lag']);    
+        tmp.([lag_signs{i} '_lag']) = get_moran_neighborhood_width(...
+            fib,value_array,map_results.str.info.voxel_size,widths_to_test,'n_it',500,...
+            'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+            'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+            'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)]);
+        tmp.([lag_signs{i} '_lag']).loc_max = tmp.([lag_signs{i} '_lag']).width(...
+            find(islocalmax(tmp.([lag_signs{i} '_lag']).width_z),1,'first'));
+    end
+    map_results.moran.neighborhood.moran_neighborhood = tmp;
+    save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
+end
+
+% 3b. actual moran, based on that neighborhood
+for i = 1:numel(lag_signs)
+    if ~isfield(map_results.moran,[lag_signs{i} '_lag'])
+        disp([lag_signs{i} '_lag: calculating local Moran''s I and null distr']);
+        neighborhood_width = max([...
+            map_results.moran.neighborhood.moran_neighborhood.([lag_signs{i} '_lag']).loc_max,...
+            map_results.moran.neighborhood.mouse_neighborhood.vox,...
+            ]);
+        map_results.moran.neighborhood.width.([lag_signs{i} '_lag']) = neighborhood_width; % store this
+        data = map_results.interp.([lag_signs{i} '_lag']).vol;
+        map_results.moran.([lag_signs{i} '_lag']) = ...
+            local_morans_I_bootstrap_null(...
+            fib,map_results.vals.r.([lag_signs{i} '_lag']),...
+            map_results.str.info.voxel_size,'n_it',10000,'batch_size',1000,...
+            'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+            'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+            'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],...
+            'prctiles',[95 97.5 99 99.5 99.9],'save_null',fullfile(save_dir1,['null_moran_' lag_signs{i} '_lag.mat']),...
+            'weight_matrix',ones(neighborhood_width,neighborhood_width,neighborhood_width));
+        save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
+    end
+end
+% 3c. significant hotspot
+for i = 1:numel(lag_signs)
+    if ~isfield(map_results.moran.([lag_signs{i} '_lag']),'sig')    
+        map_results.moran.([lag_signs{i} '_lag']) = local_morans_I_sig_moran(...
+            map_results.moran.([lag_signs{i} '_lag']),...
+            fullfile(save_dir1,['null_moran_' lag_signs{i} '_lag.mat']),...
+            'mask',str.striatum_mask);  
+        save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
+    end
+end
+
     
 % %%   
 % % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -236,11 +271,7 @@ function cc_lags_distr = get_cross_corr_lag_distr(mice,fib,data_dir,lag,...
     end
     
     % load if we have it
-    if exist(fullfile(save_dir,'cross_corr_r_lag_results.mat'),'file')
-        cc_lags_distr = load(fullfile(save_dir,'cross_corr_r_lag_results.mat'));
-    else
-        cc_lags_distr = struct;        
-    end       
+    cc_lags_distr = load_if_exist(fullfile(save_dir,'cross_corr_r_lag_results.mat'));      
     
     % each mouse's min #timepoints needed to estimate corr
     if ~isfield(cc_lags_distr,'min_n')
@@ -978,54 +1009,3 @@ function f =  plot_lag_hist_and_components(cc_lags_distr,lag,varargin)
 
 end
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% get_mouse_neighborhood_r:
-%
-% Based on a mouse's fiber locations, determine the minimum radius r such
-% that for any fiber, there are x fibers within an r-radius sphere.
-% 
-% x can either be hard-coded, or determined via Kelejian and Prucha (2007),
-% which says the cube-root of the number of fibers
-%
-function mouse_neighborhood = get_mouse_neighborhood_r(fib,varargin)
-    %%%  parse optional inputs %%%
-    ip = inputParser;
-    ip.addParameter('min_n_fibs',[]);   % #fibers required to be within radius r    
-    ip.parse(varargin{:});
-    for j=fields(ip.Results)'
-        eval([j{1} '=ip.Results.' j{1} ';']);
-    end
-    
-    % initialize output
-    mouse_neighborhood = struct;
-    
-    % make this a cell
-    if ischar(fib.mouse)
-        fib.mouse = cellstr(fib.mouse);
-    end
-    
-    % loop over mice
-    mice = unique(fib.mouse);
-    for m = 1:numel(mice)
-        mouse = mice{m};
-        this_fib = fib(ismember(fib.mouse,(mouse)),:);
-        if isempty(min_n_fibs)
-            this_min_n_fibs = round(size(this_fib,1)^(1/3));
-        else
-            this_min_n_fibs = min_n_fibs;
-        end
-        
-        % get fib-fib distances
-        fib_dist = pdist2([this_fib.fiber_bottom_DV this_fib.fiber_bottom_ML this_fib.fiber_bottom_AP],...
-            [this_fib.fiber_bottom_DV this_fib.fiber_bottom_ML this_fib.fiber_bottom_AP]);
-        % now sort each column
-        fib_dist = sort(fib_dist,1);
-        dist_req = max(fib_dist(this_min_n_fibs,:));
-        % output
-        mouse_neighborhood.(mouse).r = dist_req;
-        mouse_neighborhood.(mouse).n = this_min_n_fibs;
-    end
-end
-        
-        

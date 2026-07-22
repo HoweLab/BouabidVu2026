@@ -1,62 +1,75 @@
-% function output = local_morans_I_sig_moran(moran_map,null_moran_struct,how_best,vol_thresh)
+% function output = local_morans_I_sig_moran(moran_struct,null_moran_path,varargin)
 %
 % returns the hottest hotspot from comparison of local moran's with null moran
 %
 % inputs:
 % moran_map: map of local_morans_I
-% null_moran: output from local_morans_I_bootstrap_null.m
-% how_best = how to determine the hottest hotspot: 'dominant','min',or,'max'
+% null_moran: output from local_morans_I_bootstrap_null.m save_null option
 %
 % optional inputs:
-% vol_thresh: minimum volume for hotspot
 % generate_rand: the number of random connected volumes to generate of same 
 %       size as hotspot (set to 0 to not do this)
 % mask: optional mask to mask moran map and also from within which to
 %       generate random volumes (if opt in)
 %
 % Mai-Anh Vu, 2025
-function output = local_morans_I_sig_moran(smooth_map,moran_map,null_moran,how_best,varargin)
+% edited 2026/07/22 to incorporate boostrapped null cluster size
+
+function moran_struct = local_morans_I_sig_moran(moran_struct,null_moran_path,varargin)
 
 %%%  parse optional inputs %%%
 ip = inputParser;
-ip.addParameter('vol_thresh',10^3);
-ip.addParameter('generate_rand',10000); % set to 0 to not do this
 ip.addParameter('mask',[])
+ip.addParameter('alpha_val',0.05)
 ip.parse(varargin{:});
 for j=fields(ip.Results)'
     eval([j{1} '=ip.Results.' j{1} ';']);
 end
+
+% mask
 if isempty(mask)
     mask = ones(size(moran_map));
 end
 
-% significant moran
-sig_map = moran_map > null_moran.prctile95 &  mask==1;
+% corresponding percentile
+this_prctile = 100*(1-alpha_val);
+p_field = (['prctile' strrep(sprintf('%2.02f',this_prctile),'.','p')]);
+vox_thresh = moran_struct.null_stats.(p_field);
 
-% connected components
-cc = bwconncomp(sig_map);
-cc_size = cellfun(@(x) numel(x),cc.PixelIdxList);
-cc_vals = cellfun(@(x) mean(smooth_map(x)),cc.PixelIdxList);
-keep_idx = cc_size>vol_thresh; % more than 500um^3
-cc_size = cc_size(keep_idx);
-cc_vals = cc_vals(keep_idx);
-cc.PixelIdxList = cc.PixelIdxList(keep_idx);
-% sorting, depending on condition
-if strcmp(how_best,'max')
-    [~,sort_idx] = sort(cc_vals,'descend');
-elseif strcmp(how_best,'min')
-    [~,sort_idx] = sort(cc_vals,'ascend');
-elseif strcmp(how_best,'dominant')
-    [~,sort_idx] = sort(abs(cc_vals),'descend');
+
+% maximum cluster at each iteration of null moran
+null_moran = matfile(null_moran_path); 
+n_it = size(null_moran.null_moran,4);
+null_max_clusters = nan(n_it,1);
+
+for i = 1:n_it
+    this_null = null_moran.null_moran(:,:,:,i);
+    this_null(mask==0) = nan;
+    this_null_sig = this_null > vox_thresh;
+    sig_clusters = bwconncomp(this_null_sig);
+    sig_clusters = cellfun(@numel, sig_clusters.PixelIdxList);
+    null_max_clusters(i) = max(sig_clusters);
 end
+% save out cluster threshold
+clust_thresh = prctile(null_max_clusters,this_prctile);
+moran_struct.null_stats.(strrep(p_field,'prctile','clustsize')) = clust_thresh;
+    
+% actual significance map
+sig_map = moran_struct.moran;
+sig_map(mask==0) = nan;
+sig_map = sig_map > vox_thresh;
 
-% make a mask of this volume
-sig_map2 = zeros(size(sig_map));
-sig_map2(cc.PixelIdxList{sort_idx(1)}) = 1; 
-output.map = sig_map2;
-output.vox = cc.PixelIdxList{sort_idx(1)};
+% hotspots
+sig_clusters = bwconncomp(sig_map);
+sig_clusters_size = cellfun(@(x) numel(x),sig_clusters.PixelIdxList);
+keep_idx = sig_clusters_size > clust_thresh; 
+moran_struct.sig.hotspot = sig_clusters.PixelIdxList(keep_idx);
 
-% also generate a random distribution of volumes of this size
+% also generate a random distribution of volumes of hotspot(s)
 if generate_rand > 0
-    output.rand =  rand_volume(size(mask),numel(output.vox),'n',generate_rand,'mask',mask);
+    for i = 1:numel(moran_struct.sig.hotspot)
+        moran_struct.sig.rand{i} = rand_volume(size(mask),...
+            numel(moran_struct.sig.hotspot{i}),...
+            'n',generate_rand,'mask',mask);
+    end
 end

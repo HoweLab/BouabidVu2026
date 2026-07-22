@@ -18,7 +18,7 @@
 % Mai-Anh Vu, 9/17/2025, as a way to generate a null distribution to
 % quantify overlap between "hotspot" volumes
 %
-%
+% updated 2026/07/22 to return matrix instead of cell array
 
 function output = rand_volume(input_size,volume_size,varargin)
 
@@ -38,10 +38,10 @@ function output = rand_volume(input_size,volume_size,varargin)
     else
         input_vol = input_vol + 1; % make it all ones
     end
-    output = cell(n,1);
+    output = nan(volume_size,n);
     parfor i = 1:n
         output_vol = get_rand_vol(input_vol,volume_size);
-        output{i} = find(output_vol==1);
+        output(:,i) = find(output_vol==1);
         if rem(i,100)==0 % display every 100
             disp(i)
         end

@@ -2,12 +2,14 @@
 % Mai-Anh Vu, 2025
 % 
 % NOTE: this assumes same voxel size and same voxel coordinate spacing
-% hotspot1_rand = cell array of voxel indices of random hotspot1 volumes
+% hotspot1_rand = m x n of voxel indices of random hotspot 1 volume; m = voxels; n = iterations
 % hotspot1_vox = indices of voxels in hotspot1
 % hotspot1_DV = vector of DV coords corresponding to hotspot1 map rows
 % hotspot1_ML = vector of ML coords corresponding to hotspot1 map columns
 % hotspot1_AP = vector of AP coords corresponding to hotspot1 map slices
-
+%
+% updated 2026/07/22: output from rand_volume is matrix instead of cell
+%
 function output = hotspot_comparison(...
     hotspot1_rand,hotspot1_vox,hotspot1_DV,hotspot1_ML,hotspot1_AP,...
     hotspot2_rand,hotspot2_vox,hotspot2_DV,hotspot2_ML,hotspot2_AP)
@@ -42,13 +44,13 @@ r = r+DV1_start-1;
 c = c+ML1_start-1;
 s = s+AP1_start-1;
 vox1 = sub2ind(dim_union,r,c,s);
-rand1 = cell(size(hotspot1_rand));
-for i = 1:numel(hotspot1_rand)
-    [r,c,s] = ind2sub(dim1,hotspot1_rand{i});
+rand1 = nan(size(hotspot1_rand));
+for i = 1:size(hotspot1_rand,2)
+    [r,c,s] = ind2sub(dim1,hotspot1_rand(:,i));
     r = r+DV1_start-1;
     c = c+ML1_start-1;
     s = s+AP1_start-1;
-    rand1{i} = sub2ind(dim_union,r,c,s);
+    rand1(:,i) = sub2ind(dim_union,r,c,s);
 end
 
 % hotspot2: recalculate voxel indices and rand voxel indices
@@ -59,17 +61,17 @@ r = r+DV2_start-1;
 c = c+ML2_start-1;
 s = s+AP2_start-1;
 vox2 = sub2ind(dim_union,r,c,s);
-rand2 = cell(size(hotspot2_rand));
-for i = 1:numel(hotspot2_rand)
-    [r,c,s] = ind2sub(dim1,hotspot2_rand{i});
+rand2 = nan(size(hotspot2_rand));
+for i = 1:size(hotspot2_rand,2)
+    [r,c,s] = ind2sub(dim1,hotspot2_rand(:,i));
     r = r+DV2_start-1;
     c = c+ML2_start-1;
     s = s+AP2_start-1;
-    rand2{i} = sub2ind(dim_union,r,c,s);
+    rand2(:,i) = sub2ind(dim_union,r,c,s);
 end
 
 % now calculate overlap 
-rand_overlap = arrayfun(@(x) numel(intersect(rand1{x},rand2{x})),1:numel(rand1));
+rand_overlap = arrayfun(@(x) numel(intersect(rand1(:,x),rand2(:,x))),1:numel(rand1));
 actual_overlap = numel(intersect(vox1,vox2));
 p_overlap = sum(rand_overlap>=actual_overlap)/numel(rand_overlap);
     
