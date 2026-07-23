@@ -21,8 +21,8 @@ function plot_smooth_maps(this_map,str,varargin)
     end
     
     % calculate projections
-    axial_vol = get_volume_projection(this_map,'axial','mask',str.striatum_mask);
-    sagittal_vol = get_volume_projection(this_map,'sagittal','mask',str.striatum_mask);
+    axial_vol = get_volume_projection(this_map,'axial','mask',str.striatum_mask,'mask_replace',nan);
+    sagittal_vol = get_volume_projection(this_map,'sagittal','mask',str.striatum_mask,'mask_replace',nan);
 
     % cmap_bounds: default is symmetric, thresholded at 99.5th prctile of
     % abs(axial_map), redblue map

@@ -71,7 +71,7 @@ for i = 1:size(hotspot2_rand,2)
 end
 
 % now calculate overlap 
-rand_overlap = arrayfun(@(x) numel(intersect(rand1(:,x),rand2(:,x))),1:numel(rand1));
+rand_overlap = arrayfun(@(x) numel(intersect(rand1(:,x),rand2(:,x))),1:size(rand1,2));
 actual_overlap = numel(intersect(vox1,vox2));
 p_overlap = sum(rand_overlap>=actual_overlap)/numel(rand_overlap);
     

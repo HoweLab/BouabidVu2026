@@ -17,5 +17,5 @@ end
 if exist(output_path,'file')
     output = load(output_path);
 else
-    eval(['output = ' output_class '.empty']);
+    eval(['output = ' output_class '.empty;']);
 end

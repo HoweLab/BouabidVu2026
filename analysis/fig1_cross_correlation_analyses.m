@@ -46,22 +46,28 @@ if ~isfield(map_results,'str')
 end
 
 % vals
+map_results.vals.z.neg_lag = cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_neg_idx);
 map_results.vals.r.neg_lag = tanh(cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_neg_idx));
+map_results.vals.sig.neg_lag = cc_lags_distr.lag_gm.all.weighted_r_z_sig(:,cc_lags_distr.lag_gm.all.main_neg_idx);
+map_results.vals.z.pos_lag = cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_pos_idx);
 map_results.vals.r.pos_lag = tanh(cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_pos_idx));
+map_results.vals.sig.pos_lag = cc_lags_distr.lag_gm.all.weighted_r_z_sig(:,cc_lags_distr.lag_gm.all.main_pos_idx);
 
 % smooth maps
 if ~isfield(map_results,'info')
     lag_signs = {'neg','pos'};
-    tmp = get_activity_map_interp([map_results.vals.r.neg_lag map_results.vals.r.pos_lag],...
-        fib, str.info.voxel_size,'AP_range',[min(str.info.AP) max(str.info.AP)],...
-        'ML_range',[min(str.info.ML) max(str.info.ML)],...
-        'DV_range',[min(str.info.DV) max(str.info.DV)],'incl_plot_info',1);  
+    tmp = get_activity_map_interp([map_results.vals.z.neg_lag map_results.vals.z.pos_lag],...
+        fib, map_results.str.info.voxel_size,...
+        'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+        'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+        'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],'incl_plot_info',1);  
     for i = 1:numel(lag_signs)
-        map_results.interp.([lag_signs{i} '_lag']).vol = tmp.(['vol_' sprintf('%02d',i)]).interp;   % interpolated volume
+        map_results.interp.([lag_signs{i} '_lag']).vol = tmp.(['vol_' sprintf('%02d',i)]).interp;   % interpolated volume (z)
         map_results.interp.([lag_signs{i} '_lag']).n = tmp.(['vol_' sprintf('%02d',i)]).n_mice;     % #mice contrib to each voxel
         map_results.interp.([lag_signs{i} '_lag']).F = tmp.(['vol_' sprintf('%02d',i)]).interp_F;   % interpolant function
+        map_results.interp.([lag_signs{i} '_lag']).vol_r = tanh(map_results.interp.([lag_signs{i} '_lag']).vol); % r for visualization
     end
-    map_results.info = tmp.info;
+    map_results.info = tmp.info;    
     save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
 end
 
@@ -89,7 +95,7 @@ if ~isfield(map_results,'moran') || ~isfield(map_results.moran,'neighborhood') |
     ~isfield(map_results.moran.neighborhood,'moran_neighborhood')
     tmp = struct;
     for i = 1:numel(lag_signs)
-        value_array = map_results.vals.r.([lag_signs{i} '_lag']);    
+        value_array = map_results.vals.z.([lag_signs{i} '_lag']); % use z
         tmp.([lag_signs{i} '_lag']) = get_moran_neighborhood_width(...
             fib,value_array,map_results.str.info.voxel_size,widths_to_test,'n_it',500,...
             'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
@@ -130,45 +136,56 @@ for i = 1:numel(lag_signs)
         map_results.moran.([lag_signs{i} '_lag']) = local_morans_I_sig_moran(...
             map_results.moran.([lag_signs{i} '_lag']),...
             fullfile(save_dir1,['null_moran_' lag_signs{i} '_lag.mat']),...
-            'mask',str.striatum_mask);  
+            'mask',map_results.str.striatum_mask,'generate_rand',10000);  
         save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
     end
 end
 
     
-% %%   
-% % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% % % 4. results figs
-% % results = load(fullfile(save_dir1,'cross_corr_dominant_results.mat'));
-% % 
-% % % scatter plot
-% % plot_lag_corr_scatter(results.vals.r,results.vals.lag/18*1000,'lat_bins',[-1000:(1000/9):1000]);
-% % 
-% % % smooth maps
-% % outlines = get_mask_projection_outlines(results.sig_moran.map,...
-% %     results.str,'apply_str_mask',1,'proj_orientations',{'axial','sagittal'});    
-% % plot_smooth_maps(results.smooth,results.str,'outlines',outlines);
-% % 
-% % % in-v-out violin
-% % plot_violin_in_out(results.vals.r,fib,results.str,results.sig_moran.map)
-% % 
-% % % pie chart: mouse composition of hotspot
-% % map_ind = get_map_ind(fib,results.str);
-% % in_map = results.sig_moran.map(map_ind) == 1;
-% % mouse_n = zeros(numel(mice),1);
-% % hotspot_fib = fib(in_map,:);
-% % for m = 1:numel(mice)
-% %     mouse_n(m) =sum(ismember(cellstr(hotspot_fib.mouse),mice{m}));
-% % end
-% % figure
-% % p = pie(mouse_n);
-% % p_colors = lines(7);
-% % p_colors(4,:) = p_colors(6,:);
-% % for i = 1:numel(mice)
-% %     p((2*i)-1).FaceColor = p_colors(i,:);
-% % end
+%   
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 4. results figs
 
+% 4a. smooth maps with moran hotspots
+lag_signs = {'neg','pos'};
+map_results = load_if_exist(fullfile(save_dir1,'map_results.mat'));
+mm = max(structfun(@(x) prctile(abs(x.vol(:)),99.9),map_results.interp));
+for i = 1:numel(lag_signs)
+    % get outlines of hotspot maps
+    for j = 1:numel(map_results.moran.([lag_signs{i} '_lag']).sig.hotspot)
+        this_map = zeros(size(map_results.str.striatum_mask));
 
+        this_map(map_results.moran.([lag_signs{i} '_lag']).sig.hotspot{j}) = 1;   
+        outlines = get_mask_projection_outlines(...
+        this_map, map_results.str,'apply_str_mask',1,'proj_orientations',{'axial','sagittal'});    
+
+        % smooth maps (use back-transformed r for visualization)   
+        plot_smooth_maps(map_results.interp.([lag_signs{i} '_lag']).vol_r,...
+            map_results.str,'outlines',outlines,'cmap_bounds',[-mm mm]);
+        
+        % significance inside/outside hotspot
+        plot_hotspot_sig_sites(this_map,map_results.str,map_results.vals.sig.([lag_signs{i} '_lag']),fib,'y_max',size(fib,1))
+    end
+    
+end
+
+% 4b. contour maps
+for i = 1:numel(lag_signs)
+    this_map = map_results.interp.([lag_signs{i} '_lag']).vol_r; % use back-transformed r for visualization
+    peak_sign = sign(nanmean(this_map(:)));
+    plot_contour_maps(this_map,map_results.str,[-(ceil(mm*10)/10):0.05:(ceil(mm*10)/10)],peak_sign,'peak_color',[]);    
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 5. some notes
+% what percent of the striatum are we covering
+disp(100*sum(~isnan(map_results.interp.pos_lag.vol(:)))/sum(map_results.str.striatum_mask(:)))
+
+% do the neg and pos hotspots overlap
+output=hotspot_comparison(map_results.moran.neg_lag.sig.rand{1},map_results.moran.neg_lag.sig.hotspot{1},...
+    map_results.str.info.DV,map_results.str.info.ML,map_results.str.info.AP,...
+    map_results.moran.pos_lag.sig.rand{2},map_results.moran.pos_lag.sig.hotspot{2},...
+    map_results.str.info.DV,map_results.str.info.ML,map_results.str.info.AP);
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% FUNCTIONS
@@ -1008,4 +1025,6 @@ function f =  plot_lag_hist_and_components(cc_lags_distr,lag,varargin)
     title('DA \rightarrow ACh','interpreter','tex','Color','r')
 
 end
+
+
 

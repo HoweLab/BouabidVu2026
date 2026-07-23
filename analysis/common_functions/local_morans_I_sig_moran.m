@@ -19,6 +19,7 @@ function moran_struct = local_morans_I_sig_moran(moran_struct,null_moran_path,va
 
 %%%  parse optional inputs %%%
 ip = inputParser;
+ip.addParameter('generate_rand',0)
 ip.addParameter('mask',[])
 ip.addParameter('alpha_val',0.05)
 ip.parse(varargin{:});
@@ -40,7 +41,7 @@ vox_thresh = moran_struct.null_stats.(p_field);
 % maximum cluster at each iteration of null moran
 null_moran = matfile(null_moran_path); 
 n_it = size(null_moran.null_moran,4);
-null_max_clusters = nan(n_it,1);
+null_max_clusters = zeros(n_it,1);
 
 for i = 1:n_it
     this_null = null_moran.null_moran(:,:,:,i);
@@ -48,7 +49,9 @@ for i = 1:n_it
     this_null_sig = this_null > vox_thresh;
     sig_clusters = bwconncomp(this_null_sig);
     sig_clusters = cellfun(@numel, sig_clusters.PixelIdxList);
-    null_max_clusters(i) = max(sig_clusters);
+    if ~isempty(sig_clusters)
+        null_max_clusters(i) = max(sig_clusters);
+    end
 end
 % save out cluster threshold
 clust_thresh = prctile(null_max_clusters,this_prctile);

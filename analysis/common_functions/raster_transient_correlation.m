@@ -21,9 +21,6 @@
 % local_transient_window: the window around the max (or min) of the
 %       triggered average over which to consider the trial_wise max (or
 %       min). it is a symmetric window; i.e., 18 = +/-9 
-% center_transient: if set to 1, each trial will center the peak or trough
-%       of the transient as t=0, otherwise the average peak or trough time
-%       will be used as t=0
 %
 % output is a struct with lots of information (see bottom for details)
 % 
@@ -31,6 +28,9 @@
 %
 % Mai-Anh Vu
 % 2025/09/16
+% edited 2026/07/22: The signal being correlated has the event-triggered 
+% average subtracted. Then the raster gets centered on the trial-by-trial
+% reference transient peak/trough.
 
 
 
@@ -49,9 +49,6 @@ ip.addParameter('corr_idx_of_int',1);
 % trial-wise max (or min). a window of 1 consider +/-1 index around the
 % triggered average max index
 ip.addParameter('local_transient_window',[]);
-% default: 1 = center the trial-wise transient as t=0; else 0 = center the
-% triggered-average transient
-ip.addParameter('center_trial_transient',0); 
 ip.parse(varargin{:});
 for j=fields(ip.Results)'
     eval([j{1} '=ip.Results.' j{1} ';']);
@@ -73,6 +70,8 @@ end
 ref_raster_orig = ref_raster;
 ref_raster(~ismember(input_idx,ref_idx_of_int),:,:) = nan;
  
+% subtract event-triggered average
+corr_raster = corr_raster - nanmean(corr_raster,3);
 
 % get triggered average max/min to anchor timing of finding local max/min
 if polarity == 1
@@ -134,15 +133,10 @@ corr_idx_i = repmat(vec(1:size(corr_raster,1)),1,size(corr_raster,2),size(corr_r
 corr_idx_i = corr_idx_i(ismember(input_idx,corr_idx_of_int),:,:);
 corr_idx_j = repmat(1:size(corr_raster,2),numel(corr_idx_of_int),1,size(corr_raster,3));
 corr_idx_k = repmat(permute(1:size(corr_raster,3),[1 3 2]),numel(corr_idx_of_int),size(corr_raster,2),1);
-if center_trial_transient == 0 % center the corr raster around the trg_avg_mean
-    wind_idx_tp_centered = corr_idx_i + repmat(input_idx(avg_tr_idx),...
-        numel(corr_idx_of_int),1,size(corr_raster,3));
-    wind_idx_tp_centered(wind_idx_tp_centered<1 | wind_idx_tp_centered>numel(input_idx)) = nan;
-else % center the corr raster around the trial-specific means if that's what we're doing
-    wind_idx_tp_centered = corr_idx_i + repmat(permute(input_idx(rel_ref_tr_idx+avg_tr_idx),[3 2 1]),...
-        numel(corr_idx_of_int),1,1);
-    wind_idx_tp_centered(wind_idx_tp_centered<1 | wind_idx_tp_centered>numel(input_idx)) = nan;
-end
+% center the corr raster around the trial-specific means if that's what we're doing
+wind_idx_tp_centered = corr_idx_i + repmat(permute(input_idx(rel_ref_tr_idx+avg_tr_idx),[3 2 1]),...
+    numel(corr_idx_of_int),1,1);
+wind_idx_tp_centered(wind_idx_tp_centered<1 | wind_idx_tp_centered>numel(input_idx)) = nan;
 corr_raster_centered = nan(size(wind_idx_tp_centered));
 centered_ind = sub2ind(size(corr_raster),wind_idx_tp_centered(:),corr_idx_j(:),corr_idx_k(:));
 corr_raster_centered(~isnan(centered_ind)) = corr_raster(centered_ind(~isnan(centered_ind)));
@@ -163,34 +157,6 @@ for r = 1:size(ref_tr_mag,2)
         end
     end
 end
-
-
-% results: dominant (largest magnitude) corr_r
-[~,dominant_corr_r_idx] = max(abs(output.corr.corr_r),[],1);
-[~,dominant_corr_r_lin_idx] = max(abs(output.corr.corr_r),[],1,'linear');
-output.corr.dominant_corr_r = vec(output.corr.corr_r(dominant_corr_r_lin_idx));
-output.corr.dominant_p = vec(output.corr.p(dominant_corr_r_lin_idx));
-output.corr.dominant_corr_r_idx = vec(dominant_corr_r_idx);
-output.corr.dominant_corr_r_input_idx = vec(corr_idx_of_int(dominant_corr_r_idx));
-
-
-% results: max corr_r
-[~,dominant_corr_r_idx] = max(output.corr.corr_r,[],1);
-[~,dominant_corr_r_lin_idx] = max(output.corr.corr_r,[],1,'linear');
-output.corr.max_corr_r = vec(output.corr.corr_r(dominant_corr_r_lin_idx));
-output.corr.max_p = vec(output.corr.p(dominant_corr_r_lin_idx));
-output.corr.max_corr_r_idx = vec(dominant_corr_r_idx);
-output.corr.max_corr_r_input_idx = vec(corr_idx_of_int(dominant_corr_r_idx));
-
-
-% results: min corr_r
-[~,dominant_corr_r_idx] = min(output.corr.corr_r,[],1);
-[~,dominant_corr_r_lin_idx] = min(output.corr.corr_r,[],1,'linear');
-output.corr.min_corr_r = vec(output.corr.corr_r(dominant_corr_r_lin_idx));
-output.corr.min_p = vec(output.corr.p(dominant_corr_r_lin_idx));
-output.corr.min_corr_r_idx = vec(dominant_corr_r_idx);
-output.corr.min_corr_r_input_idx = vec(corr_idx_of_int(dominant_corr_r_idx));
-
 
 % some useful info
 output.corr_raster.rel_idx = corr_idx_of_int;
