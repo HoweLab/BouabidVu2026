@@ -2,7 +2,7 @@
 % organization
 addpath(fullfile(pwd,'common_functions'))
 data_dir = 'G:';
-mice = {'UG27','UG28','UG29','UG30','UG31'};
+mice = {'UG27','UG28','UG29','UG30','UG31','AD1','AD2','AD3'};
 fib = cohort_fib_table(data_dir,mice);
 
 % directory for saving (interim) results
@@ -74,6 +74,7 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 3. maps: moran
+map_results = load_if_exist(fullfile(save_dir1,'map_results.mat'));
 lag_signs = {'neg','pos'};
 
 % 3a. first determine proper neighborhood cube width
@@ -165,8 +166,7 @@ for i = 1:numel(lag_signs)
         
         % significance inside/outside hotspot
         plot_hotspot_sig_sites(this_map,map_results.str,map_results.vals.sig.([lag_signs{i} '_lag']),fib,'y_max',size(fib,1))
-    end
-    
+    end    
 end
 
 % 4b. contour maps
@@ -179,7 +179,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 5. some notes
 % what percent of the striatum are we covering
-disp(100*sum(~isnan(map_results.interp.pos_lag.vol(:)))/sum(map_results.str.striatum_mask(:)))
+disp(100*sum(~isnan(map_results.interp.neg_lag.vol(:)))/sum(map_results.str.striatum_mask(:)))
 
 % do the neg and pos hotspots overlap
 output=hotspot_comparison(map_results.moran.neg_lag.sig.rand{1},map_results.moran.neg_lag.sig.hotspot{1},...
@@ -232,6 +232,11 @@ function [cc_results,mouse_results] = get_cross_corr_results(mice,fib,data_dir,l
         for m = 1:numel(mice)        
             mouse = mice{m};
             disp(mouse)        
+            if startsWith(mouse,'UG')
+                Fc_field = 'Fc_exp_hp_art';
+            elseif startsWith(mouse,'AD')
+                Fc_field = 'Fc_exp_hp';
+            end
             if save_by_mouse == 1 && exist(fullfile(save_dir,[mouse '.mat']),'file')
                 session_cross_corrs = load(fullfile(save_dir,[mouse '.mat']));
             else
@@ -306,8 +311,8 @@ function cc_lags_distr = get_cross_corr_lag_distr(mice,fib,data_dir,lag,...
                 exp_dir = exp_dirs{d};
                 data = load(fullfile(data_dir,mouse,exp_dir,[mouse '_' exp_dir '.mat'])); % load data
                 for roi = 1:numel(str_rois)
-                    ACh = data.ACh.Fc_exp_hp_art(:,str_rois(roi));
-                    DA = data.DA.Fc_exp_hp_art(:,str_rois(roi));
+                    ACh = data.ACh.(Fc_field)(:,str_rois(roi));
+                    DA = data.DA.(Fc_field)(:,str_rois(roi));
                     min_n(d,roi) = get_required_corr_n(DA,ACh,n_calculation.r_target,n_calculation.alpha,n_calculation.power,2*lag+1);
                 end
             end
@@ -444,7 +449,7 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % get_mouse_cross_corr_lag_distr:
-function mouse_data = get_mouse_cross_corr_lag_distr(mouse,fib,data_dir,lag,min_n,varargin)
+function mouse_data = get_mouse_cross_corr_lag_distr(mouse,fib,data_dir,lag,min_n,Fc_field,varargin)
     
     %%%  parse optional inputs %%%
     ip = inputParser;
@@ -488,8 +493,8 @@ function mouse_data = get_mouse_cross_corr_lag_distr(mouse,fib,data_dir,lag,min_
                 % taking into account the minumum n needed to estimate a pearson r of 0.3
                 exp_dir = exp_dirs{randi([1 numel(exp_dirs)])}; % randomly choose a date                
                 data = load(fullfile(data_dir,mouse,exp_dir,[mouse '_' exp_dir '.mat'])); % load data
-                DA = data.DA.Fc_exp_hp_art(:,str_rois);
-                ACh = data.ACh.Fc_exp_hp_art(:,str_rois);
+                DA = data.DA.(Fc_field)(:,str_rois);
+                ACh = data.ACh.(Fc_field)(:,str_rois);
                 n_timepoints = randi([min_n size(DA,1)-2*lag]);
                 i_start = randi([lag+1 size(DA,1)-n_timepoints-lag]);
                 %disp(['          ' num2str([i i_start n_timepoints])])
@@ -580,7 +585,7 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % get_exp_dirs: get non-reward directories
-function exp_dirs = get_exp_dirs(mouse,data_dir)
+function exp_dirs = get_exp_dirs(mouse,data_dir,Fc_field)
     % get a list of experiment directories
     exp_dirs = dir(fullfile(data_dir,mouse));
     is_dirs = [exp_dirs.isdir];
@@ -590,7 +595,7 @@ function exp_dirs = get_exp_dirs(mouse,data_dir)
     keep_dirs = ones(size(exp_dirs));
     for d = 1:numel(exp_dirs)
         data = load(fullfile(data_dir,mouse,exp_dirs{d},[mouse '_' exp_dirs{d} '.mat']),'DA','ACh');
-        if isempty(data.ACh.Fc_exp_hp_art) || isempty(data.DA.Fc_exp_hp_art)
+        if isempty(data.ACh.(Fc_field)) || isempty(data.DA.(Fc_field))
             keep_dirs(d) = 0;
         end
     end
@@ -599,7 +604,7 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % get_session_cross_corrs: get cross corr across sessions
-function session_cross_corrs = get_session_cross_corrs(mouse,fib,data_dir,lag)
+function session_cross_corrs = get_session_cross_corrs(mouse,fib,data_dir,lag,Fc_field)
 
     % info
     exp_dirs = get_exp_dirs(mouse,data_dir);
@@ -616,8 +621,8 @@ function session_cross_corrs = get_session_cross_corrs(mouse,fib,data_dir,lag)
 
     for d = 1:numel(exp_dirs)
         data = load(fullfile(data_dir,mouse,exp_dirs{d},[mouse '_' exp_dirs{d} '.mat']));
-        DA = data.DA.Fc_exp_hp_art(:,str_rois);
-        ACh = data.ACh.Fc_exp_hp_art(:,str_rois);
+        DA = data.DA.(Fc_field)(:,str_rois);
+        ACh = data.ACh.(Fc_field)(:,str_rois);
         session_cross_corr = get_session_cross_corr(DA,ACh,lag);
         % append (rows = ROIs, cols = lags, slices = sessions)
         session_cross_corrs.r(:,:,d) = session_cross_corr.r;
@@ -628,7 +633,7 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % get_null_cross_corrs: get null distribution across sessions
-function null_cross_corrs = get_null_cross_corrs(mouse,fib,data_dir,lag,varargin)
+function null_cross_corrs = get_null_cross_corrs(mouse,fib,data_dir,lag,Fc_field,varargin)
     %%%  parse optional inputs %%%
     ip = inputParser;
     ip.addParameter('n_it',5000);       % #iterations to run for null distribution
@@ -652,8 +657,8 @@ function null_cross_corrs = get_null_cross_corrs(mouse,fib,data_dir,lag,varargin
     for d = 1:numel(exp_dirs)
         % load data
         data = load(fullfile(data_dir,mouse,exp_dirs{d},[mouse '_' exp_dirs{d} '.mat']),'DA','ACh');                        
-        DA = data.DA.Fc_exp_hp_art(:,str_rois);
-        ACh = data.ACh.Fc_exp_hp_art(:,str_rois);
+        DA = data.DA.(Fc_field)(:,str_rois);
+        ACh = data.ACh.(Fc_field)(:,str_rois);
         disp(['     null: ' exp_dirs{d}])
         null_r = get_session_cross_corr_null(DA,ACh,lag,'n_it',n_it);
         % max statistic permutation: controls family-wise error rate across 

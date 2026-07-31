@@ -40,7 +40,15 @@ function output = rand_volume(input_size,volume_size,varargin)
     end
     output = nan(volume_size,n);
     parfor i = 1:n
-        output_vol = get_rand_vol(input_vol,volume_size);
+        k = 0;
+        output_vol = [];
+        while isempty(output_vol)
+            output_vol = get_rand_vol(input_vol,volume_size);                        
+            k = k + 1;
+            if k > 100
+                disp(['  uh oh! cannot get random vol'])
+            end
+        end
         output(:,i) = find(output_vol==1);
         if rem(i,100)==0 % display every 100
             disp(i)

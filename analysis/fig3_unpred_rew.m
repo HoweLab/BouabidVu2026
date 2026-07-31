@@ -30,6 +30,14 @@ if isempty(rew_da)
     rew_da = get_DA_peak_rew_cc(rew_data,fib,10000);
     save(fullfile(save_dir3,'rew_DA_peak_corr.mat'),'-struct','rew_da')
 end
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 3. cross correlation of trial-by-trial DA w trial-by-trial ACh peak 
+rew_ach = load_if_exist(fullfile(save_dir3,'rew_ACh_peak_corr.mat'));
+if isempty(rew_ach)
+    rew_ach = get_ACh_peak_rew_cc(rew_data,fib,10000);
+    save(fullfile(save_dir3,'rew_ACh_peak_corr.mat'),'-struct','rew_ach')
+end
 % 
 % 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -118,9 +126,17 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % get_all_rew_data
-function rew_data = get_all_rew_data(mice,fib,data_dir)
+function rew_data = get_all_rew_data(mice,fib,data_dir,varargin)
+
+    %%%  parse optional inputs %%%
+    ip = inputParser;
+    ip.addParameter('eta_idx',-18:27); 
+    ip.parse(varargin{:});
+    for j=fields(ip.Results)'
+        eval([j{1} '=ip.Results.' j{1} ';']);
+    end
+
     neuromods = {'DA','ACh'};
-    eta_idx = -9:27; % -.5s to 1.5s
     rew_data = struct;
     for m = 1:numel(mice)
         mouse = mice{m};           
@@ -159,44 +175,101 @@ function rew_data = get_all_rew_data(mice,fib,data_dir)
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% get_all_cc
-function rew_cc = get_DA_peak_rew_cc(rew_data,fib,null_it)
-mice = fieldnames(rew_data);
-eta_idx = -9:27; % -.5s to 1.5s   
-% corr_idx = 0:9;
+% get_DA_peak_rew_cc(
+function rew_da = get_DA_peak_rew_cc(rew_data,fib,null_it,varargin)
 
-for m = 1:numel(mice)
-    mouse = mice{m};   
-    disp(mouse)
-%     mouse_idx = ismember(fib.mouse,mouse);
-    da_act = rew_data.(mouse).DA.activity;
-    ach_act = rew_data.(mouse).ACh.activity;
-    % correlate ACh with DA peak magnitude
-    mouse_corr = raster_transient_correlation(da_act,ach_act,1,...
-        'input_idx',eta_idx,'ref_idx_of_int',0:18,'corr_idx_of_int',0:9,...
-        'local_transient_window',9); 
-    null_r = nan(null_it,size(da_act,2));
-    % now null: shuffle the trials
-    for i = 1:null_it      
-        if rem(i,500) == 0
-            disp(['     ' num2str(i)])
-        end
-        this_ach = ach_act(:,:,randperm(size(ach_act,3)));
-        this_corr = raster_transient_correlation(da_act,this_ach,1,...
-            'input_idx',eta_idx,'ref_idx_of_int',0:18,'corr_idx_of_int',0:9,...
-            'local_transient_window',9); 
-        null_r(i,:) = max(abs(this_corr.corr.corr_r));
+
+
+    %%%  parse optional inputs %%%
+    ip = inputParser;
+    ip.addParameter('eta_idx',-18:27); 
+    ip.addParameter('corr_idx',0:9); 
+    ip.parse(varargin{:});
+    for j=fields(ip.Results)'
+        eval([j{1} '=ip.Results.' j{1} ';']);
     end
-    for r = 1:size(da_act,2)
-        this_null_r = transpose(null_r(:,r));
-        this_corr = abs(mouse_corr.corr.corr_r(:,r));
-        mouse_corr.corr.null_p(:,r) = sum(repmat(this_null_r,size(this_corr,1),1) > this_corr,2)/numel(this_null_r);        
-    end
-    rew_cc.(mouse) = mouse_corr;
-end
-        
     
+    % loop
+    mice = fieldnames(rew_data);
+
+    for m = 1:numel(mice)
+        mouse = mice{m};   
+        disp(mouse)
+    %     mouse_idx = ismember(fib.mouse,mouse);
+        da_act = rew_data.(mouse).DA.activity;
+        ach_act = rew_data.(mouse).ACh.activity;
+        % correlate ACh with DA peak magnitude
+        mouse_corr = raster_transient_correlation(da_act,ach_act,1,...
+            'input_idx',eta_idx,'ref_idx_of_int',0:18,'corr_idx_of_int',corr_idx,...
+            'local_transient_window',9); 
+        null_r = nan(null_it,size(da_act,2));
+        % now null: shuffle the trials
+        for i = 1:null_it      
+            if rem(i,500) == 0
+                disp(['     ' num2str(i)])
+            end
+            this_ach = ach_act(:,:,randperm(size(ach_act,3)));
+            this_corr = raster_transient_correlation(da_act,this_ach,1,...
+                'input_idx',eta_idx,'ref_idx_of_int',0:18,'corr_idx_of_int',corr_idx,...
+                'local_transient_window',9); 
+            null_r(i,:) = max(abs(this_corr.corr.corr_r));
+        end
+        for r = 1:size(da_act,2)
+            this_null_r = transpose(null_r(:,r));
+            this_corr = abs(mouse_corr.corr.corr_r(:,r));
+            mouse_corr.corr.null_p(:,r) = sum(repmat(this_null_r,size(this_corr,1),1) > this_corr,2)/numel(this_null_r);        
+        end
+        rew_da.(mouse) = mouse_corr;
+    end
+end
+        
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% get_ACh_peak_rew_cc(
+function rew_ach = get_ACh_peak_rew_cc(rew_data,fib,null_it,varargin)
+
+
+
+    %%%  parse optional inputs %%%
+    ip = inputParser;
+    ip.addParameter('eta_idx',-18:27); 
+    ip.addParameter('corr_idx',0:9); 
+    ip.parse(varargin{:});
+    for j=fields(ip.Results)'
+        eval([j{1} '=ip.Results.' j{1} ';']);
+    end
+    
+    % loop
+    mice = fieldnames(rew_data);    
+    for m = 1:numel(mice)
+        mouse = mice{m};   
+        disp(mouse)
+    %     mouse_idx = ismember(fib.mouse,mouse);
+        da_act = rew_data.(mouse).DA.activity;
+        ach_act = rew_data.(mouse).ACh.activity;
+        % correlate ACh with DA peak magnitude
+        mouse_corr = raster_transient_correlation(ach_act,da_act,1,...
+            'input_idx',eta_idx,'ref_idx_of_int',-9:9,'corr_idx_of_int',corr_idx,...
+            'local_transient_window',9); 
+        null_r = nan(null_it,size(da_act,2));
+        % now null: shuffle the trials
+        for i = 1:null_it      
+            if rem(i,500) == 0
+                disp(['     ' num2str(i)])
+            end
+            this_da = da_act(:,:,randperm(size(da_act,3)));
+            this_corr = raster_transient_correlation(ach_act,this_da,1,...
+                'input_idx',eta_idx,'ref_idx_of_int',-9:9,'corr_idx_of_int',corr_idx,...
+                'local_transient_window',9); 
+            null_r(i,:) = max(abs(this_corr.corr.corr_r));
+        end
+        for r = 1:size(da_act,2)
+            this_null_r = transpose(null_r(:,r));
+            this_corr = abs(mouse_corr.corr.corr_r(:,r));
+            mouse_corr.corr.null_p(:,r) = sum(repmat(this_null_r,size(this_corr,1),1) > this_corr,2)/numel(this_null_r);        
+        end
+        rew_ach.(mouse) = mouse_corr;
+    end
 end
 
-        
      

@@ -44,7 +44,7 @@ ip.addParameter('input_idx',[]);
 % which indices of the raster to consider for the transient
 ip.addParameter('ref_idx_of_int',[]); 
 % which indices of the raster to consider for the correlation
-ip.addParameter('corr_idx_of_int',1); 
+ip.addParameter('corr_idx_of_int',[]); 
 % window around max (or min) of triggered average over which to consider 
 % trial-wise max (or min). a window of 1 consider +/-1 index around the
 % triggered average max index

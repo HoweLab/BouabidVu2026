@@ -9,8 +9,8 @@ function output = preprocess_data(path_roi1,path_roi2,path_behav1,path_behav2,va
     
     %%%  parse optional inputs %%%
     ip = inputParser;
-    ip.addParameter('rm_neg_artifact',[0 0]); % negative going artifacts to remove
-    ip.addParameter('rm_pos_artifact',[0 0]); % positive going artifacts to remove
+    ip.addParameter('light_blink_artifact',[0 0]); % artifacts from IR light blinking due to overheating    
+    ip.addParameter('channel_names',{'roi1','roi2'}); % same order as input
     ip.addParameter('hp_hz',[0.3 0.1]); % high pass filter freq: default ch1 = 470nm = 0.3Hz, ch2 = 570nm = 0.1Hz
     ip.parse(varargin{:});
     for j=fields(ip.Results)'
@@ -21,90 +21,75 @@ function output = preprocess_data(path_roi1,path_roi2,path_behav1,path_behav2,va
     % 1. align 2 channels if necessary
     if isempty(path_roi2) || isempty(path_behav2)
         output = struct;
-        output.roi1 = load(path_roi1);
-        output.behav1 = load(path_behav1);
+        output.(channel_names{1}) = load(path_roi1);
+        output.(['behav_' channel_names{1}]) = load(path_behav1);
     else
-        output = align_2ch(path_roi1,path_roi2,path_behav1,path_behav2);        
+        output = align_2ch(path_roi1,path_roi2,path_behav1,path_behav2,...
+            'channel_names',channel_names);        
     end        
     
     % roi deltaF/F preprocessing    
     for w = 1:sum(startsWith(fieldnames(output),'behav'))
-        roiF = output.(['roi' num2str(w)]).F;
-        sr = round(1/nanmean(diff(output.(['behav' num2str(w)]).timestamp)));
+        roiF = output.(channel_names{w}).F;
+        sr = round(1/nanmean(diff(output.(['behav_' channel_names{w}]).timestamp)));
         
 %         % sliding 8th percentile baseline
 %         [Fc,F_baseline,~] = FtoFc(roiF,540);            
-%         output.(['roi' num2str(w)]).FtoFcWindow = sr*30;
-%         output.(['roi' num2str(w)]).Fc = Fc;
-%         output.(['roi' num2str(w)]).F_baseline = F_baseline;
+%         output.(channel_names{w}).FtoFcWindow = sr*30;
+%         output.(channel_names{w}).Fc = Fc;
+%         output.(channel_names{w}).F_baseline = F_baseline;
 
-        % 2. calculate DFF from exponential baseline                                   
+        % 1. calculate DFF from 2-term exponential baseline (capture fast
+        % initial bleaching decay, and then slower decay)
         [Fc,F_baseline] = FtoFc_exp(roiF,'exp_model','exp2');
-        output.(['roi' num2str(w)]).F_baseline_exp = F_baseline;  
-        output.(['roi' num2str(w)]).Fc_exp = Fc;
+        output.(channel_names{w}).F_baseline_exp = F_baseline;  
+        output.(channel_names{w}).Fc_exp = Fc;                
 
-        % 3. highpass filter
+        % 2. highpass filter
         hp_cutoff = hp_hz(w);
         hp_steepness = 0.8;
         try
-            output.(['roi' num2str(w)]).Fc_exp_hp = highpass(output.(['roi' num2str(w)]).Fc_exp,hp_cutoff,sr,'ImpulseResponse','fir','steepness',hp_steepness);
+            output.(channel_names{w}).Fc_exp_hp = highpass(output.(channel_names{w}).Fc_exp,...
+                hp_cutoff,sr,'ImpulseResponse','fir','steepness',hp_steepness);
         catch exception
             disp('     could not high-pass filter')
-            output.(['roi' num2str(w)]).Fc_exp_hp = [];
+            output.(channel_names{w}).Fc_exp_hp = [];
         end  
-        output.(['roi' num2str(w)]).hp_steepness = hp_steepness;
-        output.(['roi' num2str(w)]).hp_hz = hp_hz(w);
-
-        % 4. if necessary, artifact removal 
-        if rm_neg_artifact(w) == 1 || rm_pos_artifact(w) == 1
-            try
-                % use non-hp Fc
-                tmp = remove_artifact(output.(['roi' num2str(w)]).Fc_exp,sr);
-                tmp_roi = tmp.roi;
-                % if there are negative artifacts to nan out
-                if rm_neg_artifact(w) == 1
-                    tmp_roi(tmp.neg_artifacts==1) = nan;
-                end
-                % if there are positive artifacts to nan out
-                if rm_pos_artifact(w) == 1
-                    tmp_roi(tmp.pos_artifacts==1) = nan;
-                end                         
-            catch exception
-                disp('     could not remove artifact')
-                tmp_roi = [];
-            end
-            % replace with nans
-            if ~isempty(output.(['roi' num2str(w)]).Fc_exp_hp)                
-                if ~isempty(tmp_roi)
-                    output.(['roi' num2str(w)]).Fc_exp_hp_art = output.(['roi' num2str(w)]).Fc_exp_hp;
-                    output.(['roi' num2str(w)]).Fc_exp_hp_art(isnan(tmp_roi)) = nan;
-                else
-                    output.(['roi' num2str(w)]).Fc_exp_hp_art = [];
-                end
-            end                      
-        end  
-        
-        % 5. whether or not that day has signal, based on # transients
-        % detected > chance
-        if isfield(output.(['roi' num2str(w)]),'Fc_exp_hp_art') 
-            if ~isempty(output.(['roi' num2str(w)]).Fc_exp_hp_art)
-                output.(['roi' num2str(w)]).sig = get_signal_tr(output.(['roi' num2str(w)]).Fc_exp_hp_art);
-            else
-                output.(['roi' num2str(w)]).sig = 0;
-            end
-        elseif ~isempty(output.(['roi' num2str(w)]).Fc_exp_hp)
-            output.(['roi' num2str(w)]).sig = get_signal_tr(output.(['roi' num2str(w)]).Fc_exp_hp);
+        output.(channel_names{w}).hp_steepness = hp_steepness;
+        output.(channel_names{w}).hp_hz = hp_hz(w);
+                
+    end
+    
+    % 3. artifact detection (if both channels are present; uses information from both channels)
+    if isfield(output,channel_names{1}) && isfield(output,channel_names{2})
+        art_results = classifyMultiChannelArtifacts(...
+            output.(channel_names{1}).Fc_exp,output.(channel_names{2}).Fc_exp,...
+            'Type1ZThresh',15,'Type1MinSlope',8,...
+            'ChannelNames',channel_names,'Type2Likely',light_blink_artifact);
+        for w = 1:numel(channel_names)
+            output.(channel_names{w}).artifact_mask = art_results.(channel_names{w}).autoRemovedMask;
+        end
+    end
+    
+    % 4. whether or not that day has signal, based on # transients: 
+    % use highpass filtered data (with artifact masked out) for this
+    for w = 1:sum(startsWith(fieldnames(output),'behav'))
+        if ~isempty(output.(channel_names{w}).Fc_exp_hp)
+            this_sig_hp = output.(channel_names{w}).Fc_exp_hp;
+            this_sig_hp(output.(channel_names{w}).artifact_mask) = nan;
+            output.(channel_names{w}).sig = get_signal_tr(this_sig_hp);
         else
-            output.(['roi' num2str(w)]).sig = 0;
+            output.(channel_names{w}).sig = 0;
         end        
     end
-end
     
+end
+  
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 % align_2ch
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
-function output = align_2ch(path_roi1,path_roi2,path_behav1,path_behav2)
+function output = align_2ch(path_roi1,path_roi2,path_behav1,path_behav2,varargin)
     % Take as input paths of roi data files corresponding to ttlIn1 and 
     % ttlIn2 NIDAQ inputs to behavior file (e.g., 470nm, 570nm), behav 
     % files already aligned to TTLs (ttl1, ttl2). Aligns them based on 
@@ -112,7 +97,16 @@ function output = align_2ch(path_roi1,path_roi2,path_behav1,path_behav2)
     %
     % Output a struct
     %
-    % modified from codeo by Liangzhu Zhang
+    % modified from code by Liangzhu Zhang
+    
+    %%%  parse optional inputs %%%
+    ip = inputParser;
+    ip.addParameter('channel_names',{'roi1','roi2'}); % same order as input
+    ip.addParameter('hp_hz',[0.3 0.1]); % high pass filter freq: default ch1 = 470nm = 0.3Hz, ch2 = 570nm = 0.1Hz
+    ip.parse(varargin{:});
+    for j=fields(ip.Results)'
+        eval([j{1} '=ip.Results.' j{1} ';']);
+    end
 
     roi1 = load(path_roi1); 
     roi2 = load(path_roi2); 
@@ -173,12 +167,12 @@ function output = align_2ch(path_roi1,path_roi2,path_behav1,path_behav2)
     end
 
     % output
-    output.roi1 = roi1;
-    output.roi2 = roi2;
-    output.behav1 = behav1;
-    output.behav2 = behav2;    
-    output.roi1idx = [I1start I1end];
-    output.roi2idx = [I2start I2end];
+    output.(channel_names{1}) = roi1;
+    output.(channel_names{2}) = roi2;
+    output.(['behav_' channel_names{1}]) = behav1;
+    output.(['behav_' channel_names{2}]) = behav2;    
+    output.([channel_names{1} '_idx']) = [I1start I1end];
+    output.([channel_names{2} '_idx']) = [I2start I2end];
     
 end
 
@@ -248,70 +242,6 @@ function [ Fc, scale, center ] = FtoFc_exp(F,varargin)
     center = nanmedian(Fc);
     Fc = Fc - center;
 end
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% remove_artifact
-%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function output = remove_artifact(roi,sr,varargin)
-    % function roi = remove_artifact(roi)
-    %
-    % use a combination filter or DF/F (Fc) amplitude, .5Hz low-pass-filtered 
-    % DF/F amplitude, and a 2s moving mean amplitude
-    %
-    % use a stringent filter to find periods to remove (-2.5*std)
-    %
-    % use a less-stringent filter to find the endpoints of those periods
-    % (-2*std)
-    %
-    % Mai-Anh
-    % 6/6/24
-
-
-    %%%  parse optional inputs %%%
-    ip = inputParser;
-    ip.addParameter('neg_f1',-2);
-    ip.addParameter('neg_f2',-2.5);
-    ip.addParameter('pos_f1',2);
-    ip.addParameter('pos_f2',5); % usually positive artifacts are huge
-    ip.parse(varargin{:});
-    for j=fields(ip.Results)'
-        eval([j{1} '=ip.Results.' j{1} ';']);
-    end
-
-    % clunky but let's just do this to be simple: loop over ROIs
-    output.roi = roi;
-    output.roi_filtered = nan(size(roi));
-    output.neg_artifacts = nan(size(roi));
-    output.pos_artifacts = nan(size(roi));
-
-    for r = 1:size(roi,2)
-        % DF/F (Fc)
-        fc = roi(:,r);
-        % low-pass filtered
-        f1p = lowpass(fc,.5,sr);
-        % moving mean
-        m = movmean(f1p,sr/2);
-
-        % neg artifact: filters
-        filter_1 = fc < neg_f1*std(fc) | f1p < neg_f1*std(f1p) | m < neg_f1*std(m);
-        filter_2 = fc < neg_f2*std(fc) | f1p < neg_f2*std(f1p) | m < neg_f2*std(m);
-        filter_3 = double(movmean(filter_2,sr*2)>0).*filter_1;
-        output.neg_artifacts(:,r) = filter_3;
-
-        % pos artifact: filters
-        filter_1 = fc > pos_f1*std(fc) | f1p > pos_f1*std(f1p) | m > pos_f1*std(m);
-        filter_2 = fc > pos_f2*std(fc) | f1p > pos_f2*std(f1p) | m > pos_f2*std(m);
-        filter_3 = double(movmean(filter_2,sr*2)>0).*filter_1;
-        output.pos_artifacts(:,r) = filter_3;
-
-        % filtered ROI output
-        fc_filtered = fc;
-        fc_filtered(output.pos_artifacts(:,r)==1 | output.neg_artifacts(:,r)==1) = nan;    
-        output.roi_filtered(:,r) = fc_filtered;    
-    end
-
-end
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 % has signal?
