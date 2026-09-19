@@ -71,6 +71,7 @@ ref_raster_orig = ref_raster;
 ref_raster(~ismember(input_idx,ref_idx_of_int),:,:) = nan;
  
 % subtract event-triggered average
+% corr_raster_orig = corr_raster;
 corr_raster = corr_raster - nanmean(corr_raster,3);
 
 % get triggered average max/min to anchor timing of finding local max/min
@@ -128,18 +129,30 @@ ref_tr_idx = transpose(squeeze(ref_tr_idx));
 % center it - this gives the position relative to the avg trg avg idx
 rel_ref_tr_idx = ref_tr_idx-ceil(numel(local_tr_ramp)/2); 
 
-% isolate the part of the corr_raster we want
+% get indices
 corr_idx_i = repmat(vec(1:size(corr_raster,1)),1,size(corr_raster,2),size(corr_raster,3));
-corr_idx_i = corr_idx_i(ismember(input_idx,corr_idx_of_int),:,:);
-corr_idx_j = repmat(1:size(corr_raster,2),numel(corr_idx_of_int),1,size(corr_raster,3));
-corr_idx_k = repmat(permute(1:size(corr_raster,3),[1 3 2]),numel(corr_idx_of_int),size(corr_raster,2),1);
-% center the corr raster around the trial-specific means if that's what we're doing
+corr_idx_j = repmat(1:size(corr_raster,2),size(corr_raster,1),1,size(corr_raster,3));
+corr_idx_k = repmat(permute(1:size(corr_raster,3),[1 3 2]),size(corr_raster,1),size(corr_raster,2),1);
+
+% center the corr raster around the trial-specific means 
 wind_idx_tp_centered = corr_idx_i + repmat(permute(input_idx(rel_ref_tr_idx+avg_tr_idx),[3 2 1]),...
-    numel(corr_idx_of_int),1,1);
+    size(corr_raster,1),1,1);
 wind_idx_tp_centered(wind_idx_tp_centered<1 | wind_idx_tp_centered>numel(input_idx)) = nan;
-corr_raster_centered = nan(size(wind_idx_tp_centered));
 centered_ind = sub2ind(size(corr_raster),wind_idx_tp_centered(:),corr_idx_j(:),corr_idx_k(:));
+corr_raster_centered = nan(size(wind_idx_tp_centered));
 corr_raster_centered(~isnan(centered_ind)) = corr_raster(centered_ind(~isnan(centered_ind)));
+% store some things for after
+corr_raster_centered_all = corr_raster_centered; 
+% corr_raster_centered_orig = nan(size(wind_idx_tp_centered));
+% corr_raster_centered_orig(~isnan(centered_ind)) = corr_raster_orig(centered_ind(~isnan(centered_ind)));
+
+% center the ref raster
+ref_raster_centered = nan(size(wind_idx_tp_centered));
+ref_raster_centered(~isnan(centered_ind)) = ref_raster_orig(centered_ind(~isnan(centered_ind)));
+
+
+% now get the part of the corr raster we want
+corr_raster_centered = corr_raster_centered(ismember(input_idx,corr_idx_of_int),:,:);
 
 % now run the correlations
 output.corr.corr_r = nan(size(corr_raster_centered,1),size(corr_raster_centered,2));
@@ -160,7 +173,9 @@ end
 
 % some useful info
 output.corr_raster.rel_idx = corr_idx_of_int;
-output.corr_raster.raster_centered = corr_raster_centered;
+output.corr_raster.ref_transient_centered = corr_raster_centered;
+output.corr_raster.ref_transient_centered_all = corr_raster_centered_all;
+% output.corr_raster.ref_transient_centered_orig = corr_raster_centered_orig;
 output.corr_raster.mu = nanmean(corr_raster_centered,3);
 output.corr_raster.sem = nanstd(corr_raster_centered,[],3)./sqrt(size(corr_raster_centered,3));
 output.ref_raster.idx = ref_idx_of_int;
@@ -168,3 +183,4 @@ output.ref_raster.avg_tr_idx = avg_tr_idx;
 output.ref_raster.trial_tr_idx = rel_ref_tr_idx; % relative to avg_tr_idx
 output.ref_raster.mu = nanmean(ref_raster,3);
 output.ref_raster.sem = nanstd(ref_raster,[],3)./sqrt(size(ref_raster,3));
+output.ref_raster.ref_transient_centered_all = ref_raster_centered;

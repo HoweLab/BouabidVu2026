@@ -16,6 +16,8 @@ end
 
 if exist(output_path,'file')
     output = load(output_path);
+elseif strcmp(output_class,'struct')
+    output = struct;
 else
     eval(['output = ' output_class '.empty;']);
 end

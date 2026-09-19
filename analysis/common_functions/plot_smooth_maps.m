@@ -64,7 +64,6 @@ function plot_smooth_maps(this_map,str,varargin)
     ylabel('Posterior \leftrightarrow Anterior')
     axis equal
     colorbar
-    title('Axial')
 
 
     %%% sagittal
