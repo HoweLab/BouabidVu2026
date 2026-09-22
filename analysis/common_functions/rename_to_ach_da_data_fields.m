@@ -1,6 +1,6 @@
 % rename the fields in the control data for ease of code re-use
 % AChMut -> ACh; tdTomato or DAMut -> DA
-function data = rename_ctrl_data_fields(data)
+function data = rename_to_ach_da_data_fields(data)
 
 % extract matching fieldnames
 all_fields = fieldnames(data);

@@ -2,22 +2,36 @@
 % organization
 addpath(fullfile(pwd,'common_functions'))
 data_dir = 'G:';
-coh_mice.cohort1 =  {'UG27','UG28','UG29','UG30','UG31'};
-coh_mice.cohort2 = {'AD1','AD2','AD3'};
-coh_mice.cohort5 = {'609','610','813','816','875'}; % note: 816 had a weird loc before; 319 has weird data. keep both for now
+sensor_cohort = 1; % set to 1 to run sensor mice, 0 to run control cohort
 
-mice = struct2cell(structfun(@(x) x(:),coh_mice,'UniformOutput',false));
+% sensor mice
+sensor_mice = struct;
+sensor_mice.cohort1 =  {'UG27','UG28','UG29','UG30','UG31'};
+sensor_mice.cohort2 = {'AD1','AD2','AD3'};
+sensor_mice.cohort5 = {'609','610','813','816','875'}; % note: 816 had a weird loc before; 319 has weird data. keep both for now
+
+% cohort mice
+control_mice = struct;
+control_mice.cohort6 = {'mutAD1','mutAD2','mutAD3'};
+control_mice.cohort3 = {'AD4','AD5','AD6'};
+
+% directory for saving (interim) results
+if sensor_cohort == 1    
+    save_dir1 = fullfile(data_dir,'results','1_cross_corr');
+elseif sensor_cohort == 0
+    save_dir1 = fullfile(data_dir,'results','ctrl_1_cross_corr');
+end
+if ~exist(save_dir1,'dir')
+    mkdir(save_dir1)
+end
+
+% setup
+mice = struct2cell(structfun(@(x) x(:),sensor_mice,'UniformOutput',false));
 mice = vertcat(mice{:});
 fib = cohort_fib_table(data_dir,mice);
 Fc_field = 'Fc';
 Fc_artifact_mask = 'artifact_mask';
 datafile_suffix = '';
-
-% directory for saving (interim) results
-save_dir1 = fullfile(data_dir,'results','1_cross_corr');
-if ~exist(save_dir1,'dir')
-    mkdir(save_dir1)
-end
 sr = 18; % sampling rate
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -334,6 +348,10 @@ function cc_lags_distr = get_cross_corr_lag_distr(mice,fib,data_dir,lag,...
             for d = 1:numel(exp_dirs)
                 exp_dir = exp_dirs{d};
                 data = load(fullfile(data_dir,mouse,exp_dir,[mouse '_' exp_dir datafile_suffix '.mat'])); % load data
+                % if these are control mice and we need to change to ACh and DA fieldnames
+                if ~isfield(data,'DA') || ~isfield(data,'ACh') 
+                    data = rename_to_ach_da_data_fields(data);
+                end
                 for roi = 1:numel(str_rois)
                     ACh = data.ACh.(Fc_field)(:,str_rois(roi));
                     DA = data.DA.(Fc_field)(:,str_rois(roi));
@@ -362,10 +380,10 @@ function cc_lags_distr = get_cross_corr_lag_distr(mice,fib,data_dir,lag,...
     
     % if we need to compile the data
 %     if ~isfield(cc_lags_distr.lag_hist,output_fields{end})
-        % initialize
-        for f = 1:numel(output_fields)                
-            cc_lags_distr.lag_hist.(output_fields{f}) = [];
-        end            
+%         % initialize
+%         for f = 1:numel(output_fields)                
+%             cc_lags_distr.lag_hist.(output_fields{f}) = [];
+%         end            
         % get per session cross-correlation and null cross-correlation 
         loc_signs = {'min','max'};
         for m = 1:numel(mice)        
@@ -541,6 +559,10 @@ function mouse_data = get_mouse_cross_corr_lag_distr(mouse,fib,data_dir,lag,min_
                 % taking into account the minumum n needed to estimate a pearson r of 0.3
                 exp_dir = exp_dirs{randi([1 numel(exp_dirs)])}; % randomly choose a date   
                 data = load(fullfile(data_dir,mouse,exp_dir,[mouse '_' exp_dir datafile_suffix '.mat'])); % load data
+                % if these are control mice and we need to change to ACh and DA fieldnames
+                if ~isfield(data,'DA') || ~isfield(data,'ACh') 
+                    data = rename_to_ach_da_data_fields(data);
+                end
                 DA = data.DA.(Fc_field)(:,str_rois);
                 ACh = data.ACh.(Fc_field)(:,str_rois);
                 if ~isempty(Fc_artifact_mask)
@@ -605,44 +627,51 @@ function mouse_data = get_mouse_cross_corr_lag_distr(mouse,fib,data_dir,lag,min_
     loc_signs = {'min','max'};
     disp('     fitting gmm to lags')                    
     for s = 1:numel(loc_signs)                               
-%         if ~isfield( mouse_data.lags.(['loc_' loc_signs{s}]),'gm')
+        if ~isfield( mouse_data.lags.(['loc_' loc_signs{s}]),'gm')
             mouse_data.lags.(['loc_' loc_signs{s}]).gm = cell(numel(str_rois),1);
             mouse_data.lags.(['loc_' loc_signs{s}]).gm_gof = cell(numel(str_rois),1);                
             mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_r = cell(numel(str_rois),1);
             mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_null_r = cell(numel(str_rois),1);
             mouse_data.lags.(['loc_' loc_signs{s}]).gm_sig = cell(numel(str_rois),1);
-            for r = 1:numel(str_rois)    
-                disp(['          ' loc_signs{s} ': ' num2str(r) ' of ' num2str(numel(str_rois))])
-                X = mouse_data.lags.(['loc_' loc_signs{s}]).lags{r};                    
+        end
+
+        for r = 1:numel(str_rois)    
+            disp(['          ' loc_signs{s} ': ' num2str(r) ' of ' num2str(numel(str_rois))])
+            X = mouse_data.lags.(['loc_' loc_signs{s}]).lags{r};                    
+            if isempty(mouse_data.lags.(['loc_' loc_signs{s}]).gm_gof{r})
                 [this_gm,this_gof] = fit_gmm_to_hist(X,'gof','BIC','choose','elbow','max_n',9);
-                mouse_data.lags.(['loc_' loc_signs{s}]).gm{r} = this_gm;
                 mouse_data.lags.(['loc_' loc_signs{s}]).gm_gof{r} = this_gof;
-                % GMM-weighted r and null
-                if ~isempty(this_gm)
-                    mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_r{r} = ...
-                        get_gmm_weighted_mean(permute(mouse_data.r(r,:,:),[3 2 1]),this_gm,-lag:lag);
-                    mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_null_r{r} = ...
-                        get_gmm_weighted_mean(permute(repmat(mouse_data.max_null_r(r,:,:),1,1,numel(-lag:lag)),[2 3 1]),this_gm,-lag:lag);
-                    if strcmp(loc_signs{s},'min')
-                        mouse_data.lags.(['loc_' loc_signs{s}]).gm_sig{r} = ...
-                            mean(mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_r{r}) <...
-                            -prctile(mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_null_r{r},95);
-                    elseif strcmp(loc_signs{s},'max')
-                        mouse_data.lags.(['loc_' loc_signs{s}]).gm_sig{r} = ...
-                            mean(mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_r{r}) >...
-                            prctile(mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_null_r{r},95);
-                    end
-                end
+                mouse_data.lags.(['loc_' loc_signs{s}]).gm{r} = this_gm;
+            else
+                [this_gm,~] = fit_gmm_to_hist(X,'gof','BIC','choose','elbow','max_n',9,...
+                    'gof_vals',mouse_data.lags.(['loc_' loc_signs{s}]).gm_gof{r});                
+                mouse_data.lags.(['loc_' loc_signs{s}]).gm{r} = this_gm;
+            end
             
+            % GMM-weighted r and null
+            if ~isempty(this_gm)
+                mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_r{r} = ...
+                    get_gmm_weighted_mean(permute(mouse_data.r(r,:,:),[3 2 1]),this_gm,-lag:lag);
+                mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_null_r{r} = ...
+                    get_gmm_weighted_mean(permute(repmat(mouse_data.max_null_r(r,:,:),1,1,numel(-lag:lag)),[2 3 1]),this_gm,-lag:lag);
+                if strcmp(loc_signs{s},'min')
+                    mouse_data.lags.(['loc_' loc_signs{s}]).gm_sig{r} = ...
+                        mean(mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_r{r}) <...
+                        -prctile(mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_null_r{r},95);
+                elseif strcmp(loc_signs{s},'max')
+                    mouse_data.lags.(['loc_' loc_signs{s}]).gm_sig{r} = ...
+                        mean(mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_r{r}) >...
+                        prctile(mouse_data.lags.(['loc_' loc_signs{s}]).gm_weighted_null_r{r},95);
+                end
             end
-            if ~isempty(save_dir)
-                save(fullfile(save_dir,[mouse save_suffix]),'-struct','mouse_data','-v7.3')
-            end
-%         end                
+        end              
+%         if ~isempty(save_dir)
+%             save(fullfile(save_dir,[mouse save_suffix]),'-struct','mouse_data','-v7.3')
+%         end
     end
-%     if ~isempty(save_dir)
-%         save(fullfile(save_dir,[mouse save_suffix]),'-struct','mouse_data','-v7.3')
-%     end
+    if ~isempty(save_dir)
+        save(fullfile(save_dir,[mouse save_suffix]),'-struct','mouse_data','-v7.3')
+    end
 end
 
 
@@ -652,9 +681,10 @@ function exp_dirs = get_exp_dirs(mouse,data_dir,varargin)
 
     %%%  parse optional inputs %%%
     ip = inputParser;
-    ip.addParameter('Fc_field','Fc');   % which DF/F field to look for
-    ip.addParameter('datafile_suffix','');  % datafile format [mouse]_[expdir][datafile_suffix].mat; default '', assume format MOUSE_EXPDIR.mat 
-    ip.addParameter('excl_unpred_rew',0);   % exclude unpredicted reward recordings (eg UG mice)
+    ip.addParameter('channel_names',{'ACh','DA'});  % channel names
+    ip.addParameter('Fc_field','Fc');               % which DF/F field to look for
+    ip.addParameter('datafile_suffix','');          % datafile format [mouse]_[expdir][datafile_suffix].mat; default '', assume format MOUSE_EXPDIR.mat 
+    ip.addParameter('excl_unpred_rew',0);           % exclude unpredicted reward recordings (eg UG mice)
     ip.parse(varargin{:});
     for j=fields(ip.Results)'
         eval([j{1} '=ip.Results.' j{1} ';']);
@@ -670,8 +700,12 @@ function exp_dirs = get_exp_dirs(mouse,data_dir,varargin)
     end
     keep_dirs = ones(size(exp_dirs));
     for d = 1:numel(exp_dirs)      
-        data = load(fullfile(data_dir,mouse,exp_dirs{d},[mouse '_' exp_dirs{d} datafile_suffix '.mat']),'DA','ACh');
-        if isempty(data.ACh.(Fc_field)) || isempty(data.DA.(Fc_field))
+        data = load(fullfile(data_dir,mouse,exp_dirs{d},[mouse '_' exp_dirs{d} datafile_suffix '.mat']));
+        % if these are control mice and we need to change to ACh and DA fieldnames
+        if ~isfield(data,channel_names{1}) || ~isfield(data,channel_names{2}) 
+            data = rename_to_ach_da_data_fields(data);
+        end
+        if isempty(data.(channel_names{1}).(Fc_field)) || isempty(data.(channel_names{2}).(Fc_field))
             keep_dirs(d) = 0;
         end
     end
@@ -708,6 +742,10 @@ function session_cross_corrs = get_session_cross_corrs(mouse,fib,data_dir,lag,va
 
     for d = 1:numel(exp_dirs)        
         data = load(fullfile(data_dir,mouse,exp_dirs{d},[mouse '_' exp_dirs{d} datafile_suffix '.mat']));
+        % if these are control mice and we need to change to ACh and DA fieldnames
+        if ~isfield(data,'DA') || ~isfield(data,'ACh') 
+            data = rename_to_ach_da_data_fields(data);
+        end
         DA = data.DA.(Fc_field)(:,str_rois);
         ACh = data.ACh.(Fc_field)(:,str_rois);
         if ~isempty(Fc_artifact_mask)
@@ -750,7 +788,11 @@ function null_cross_corrs = get_null_cross_corrs(mouse,fib,data_dir,lag,varargin
     % loop
     for d = 1:numel(exp_dirs)
         % load data        
-        data = load(fullfile(data_dir,mouse,exp_dirs{d},[mouse '_' exp_dirs{d} datafile_suffix '.mat']),'DA','ACh');                        
+        data = load(fullfile(data_dir,mouse,exp_dirs{d},[mouse '_' exp_dirs{d} datafile_suffix '.mat']));                        
+        % if these are control mice and we need to change to ACh and DA fieldnames
+        if ~isfield(data,'DA') || ~isfield(data,'ACh') 
+            data = rename_to_ach_da_data_fields(data);
+        end
         DA = data.DA.(Fc_field)(:,str_rois);
         ACh = data.ACh.(Fc_field)(:,str_rois);
         if ~isempty(Fc_artifact_mask)
@@ -946,30 +988,28 @@ end
 function [gm,gof_vals] = fit_gmm_to_hist(X,varargin)
 
     %%%  parse optional inputs %%%
-    ip = inputParser;
-    ip.addParameter('gof','AIC');                   % default AIC; other options 'BIC','NegativeLogLikelihood'
+    ip = inputParser;    
+    ip.addParameter('gof','BIC');                   % default BIC; other options 'AIC','NegativeLogLikelihood'
+    ip.addParameter('gof_vals',[]);                 % in case we already have gof_vals
     ip.addParameter('max_n',numel(unique(X(:))));   % the max # of components to run for GMM
     ip.addParameter('choose','min');                % parameter to choose #components; other options: "elbow"
     ip.addParameter('n_rep',20);                    % # replicates
     ip.addParameter('MaxIter',500);                 % max #iterations for fitting GMM
+    ip.addParameter('reg_val',1e-1);                % regularization value
     ip.parse(varargin{:});
     for j=fields(ip.Results)'
         eval([j{1} '=ip.Results.' j{1} ';']);
     end
     
     data = X(:);
-    max_n = min([max_n numel(data)-1]);
-    
+    max_n = min([max_n numel(data)-1]);    
     options = statset('MaxIter',MaxIter);
-    gof_vals = nan(max_n,1);
-   
-    for i = 1:max_n
-        try
-            gm = fitgmdist(data,i,'Options',options,'Replicates',n_rep,'Start','plus');
-        catch exception % if it's ill conditioned, add regularization
-            gm = fitgmdist(data,i,'Options',options,'Replicates',n_rep,'RegularizationValue',1e-4,'Start','plus');
-        end        
-        gof_vals(i)= gm.(gof);
+    if isempty(gof_vals)
+        gof_vals = nan(max_n,1);    
+        for i = 1:max_n
+            gm = fitgmdist(data,i,'Options',options,'Replicates',n_rep,'RegularizationValue',reg_val,'Start','plus');
+            gof_vals(i)= gm.(gof);        
+        end
     end
     if sum(~isnan(gof_vals))>0
         if strcmp(choose,'min') 
@@ -977,11 +1017,7 @@ function [gm,gof_vals] = fit_gmm_to_hist(X,varargin)
         else            
             n_gauss = get_elbow(1:max_n,gof_vals);            
         end
-        try
-            gm = fitgmdist(data,n_gauss,'Options',options,'Replicates',n_rep,'Start','plus');
-        catch exception % if it's ill conditioned, add regularization
-            gm = fitgmdist(data,n_gauss,'Options',options,'Replicates',n_rep,'RegularizationValue',1e-4,'Start','plus');
-        end          
+        gm = fitgmdist(data,n_gauss,'Options',options,'Replicates',n_rep,'RegularizationValue',reg_val,'Start','plus');
     else
         gm = [];
     end
@@ -996,27 +1032,36 @@ function k = get_elbow(x, y)
     % Make vectors
     x = x(:);
     y = y(:);
+    
+    % If y is increasing, return the min
+    if y(end)>y(1)
+        [~,k] = min(y);
+        k = x(k);
+        
+    
+    else % elbow
+        % Normalise both axes to [0,1]
+        x_norm = (x - min(x)) / (max(x) - min(x));
+        y_norm = (y - min(y)) / (max(y) - min(y));
 
-    % Normalise both axes to [0,1]
-    x_norm = (x - min(x)) / (max(x) - min(x));
-    y_norm = (y - min(y)) / (max(y) - min(y));
-    
-    % Vector from first to last point
-    % Distance from each point to this line
-    x1 = x_norm(1);   y1 = y_norm(1);
-    x2 = x_norm(end); y2 = y_norm(end);
-    
-    % Perpendicular distance from each point to the line
-    % Line defined as ax + by + c = 0
-    a = y2 - y1;
-    b = -(x2 - x1);
-    c = (x2 - x1)*y1 - (y2 - y1)*x1;
-    
-    distances = abs(a*x_norm + b*y_norm + c) / sqrt(a^2 + b^2);
-    
-    % Elbow is the point of maximum distance
-    [~, k] = max(distances);
-    k = x(k);
+        % Vector from first to last point
+        % Distance from each point to this line
+        x1 = x_norm(1);   y1 = y_norm(1);
+        x2 = x_norm(end); y2 = y_norm(end);
+
+        % Perpendicular distance from each point to the line
+        % Line defined as ax + by + c = 0
+        a = y2 - y1;
+        b = -(x2 - x1);
+        c = (x2 - x1)*y1 - (y2 - y1)*x1;
+
+        distances = abs(a*x_norm + b*y_norm + c) / sqrt(a^2 + b^2);
+
+        % Elbow is the point of maximum distance
+        [~, k] = max(distances);
+        k = x(k);
+        
+    end
 end
 
 

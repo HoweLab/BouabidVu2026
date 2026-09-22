@@ -5,7 +5,7 @@ function fib = cohort_fib_table(data_dir,mice)
     for m = 1:numel(mice)
         mouse = mice{m};
         tbl = readtable(fullfile(data_dir,mouse,'fiber_table.xlsx'));
-        tbl = tbl(tbl.included,:);
+        tbl = tbl(tbl.included==1,:);
         tbl.mouse = repmat({mouse},size(tbl,1),1);
         tbl.ROI_orig = tbl.ROI;
         % concatenate

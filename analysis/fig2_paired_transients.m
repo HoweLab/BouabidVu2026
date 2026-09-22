@@ -241,7 +241,7 @@ exp_dirs = dir(fullfile(data_dir,mouse));
 is_dirs = [exp_dirs.isdir];
 exp_dirs = {exp_dirs.name}';
 exp_dirs = exp_dirs(is_dirs);
-exp_dirs = exp_dirs(~startsWith(exp_dirs,'.'));
+exp_dirs = exp_dirs(startsWith(exp_dirs,'2'));
 for d = 1:numel(exp_dirs)
     data = load(fullfile(data_dir,mouse,exp_dirs{d},[mouse '_' exp_dirs{d} '.mat']));
     if ~isempty(data.(channel_names{1}).(Fc_field)) && ~isempty(data.(channel_names{2}).(Fc_field))
