@@ -16,9 +16,11 @@ control_mice.cohort6 = {'mutAD1','mutAD2','mutAD3'};
 control_mice.cohort3 = {'AD4','AD5','AD6'};
 
 % directory for saving (interim) results
-if sensor_cohort == 1    
+if sensor_cohort == 1
+    coh_mice = sensor_mice;
     save_dir1 = fullfile(data_dir,'results','1_cross_corr');
 elseif sensor_cohort == 0
+    coh_mice = control_mice;
     save_dir1 = fullfile(data_dir,'results','ctrl_1_cross_corr');
 end
 if ~exist(save_dir1,'dir')
@@ -26,7 +28,7 @@ if ~exist(save_dir1,'dir')
 end
 
 % setup
-mice = struct2cell(structfun(@(x) x(:),sensor_mice,'UniformOutput',false));
+mice = struct2cell(structfun(@(x) x(:),coh_mice,'UniformOutput',false));
 mice = vertcat(mice{:});
 fib = cohort_fib_table(data_dir,mice);
 Fc_field = 'Fc';
@@ -47,126 +49,142 @@ lag = sr; % lag = +/- one second (sampling rate)
 cc_lags_distr = get_cross_corr_lag_distr(mice,fib,data_dir,lag,mouse_results,...
     'sample_n',10000,'Fc_field',Fc_field,'Fc_artifact_mask',Fc_artifact_mask,...
     'save_dir',save_dir1,'datafile_suffix',datafile_suffix);
-%%
+
 % 1c. histogram of lags and identification of components
 f1 = plot_lag_hist_and_components(cc_lags_distr,lag);
-%% 
-%  
-% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% % 2. maps: interpolated
-% 
-% % load if available
-% map_results = load_if_exist(fullfile(save_dir1,'map_results.mat'));
-% 
-% % size & striatum mask
-% if ~isfield(map_results,'str')
-%     voxel_size = 0.05;
-%     str = get_striatum_vol_mask(...
-%         [min(fib.fiber_bottom_AP) max(fib.fiber_bottom_AP)],... % AP_range
-%         [min(fib.fiber_bottom_ML) max(fib.fiber_bottom_ML)],... % ML_range
-%         [min(fib.fiber_bottom_DV) max(fib.fiber_bottom_DV)],... % DV_range
-%         voxel_size);
-%     map_results.str = str;
-% end
-% 
-% % vals
-% map_results.vals.z.neg_lag = cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_neg_idx);
-% map_results.vals.r.neg_lag = tanh(cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_neg_idx));
-% map_results.vals.sig.neg_lag = cc_lags_distr.lag_gm.all.weighted_r_z_sig(:,cc_lags_distr.lag_gm.all.main_neg_idx);
-% map_results.vals.z.pos_lag = cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_pos_idx);
-% map_results.vals.r.pos_lag = tanh(cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_pos_idx));
-% map_results.vals.sig.pos_lag = cc_lags_distr.lag_gm.all.weighted_r_z_sig(:,cc_lags_distr.lag_gm.all.main_pos_idx);
-% 
-% % smooth maps
-% if ~isfield(map_results,'info')
-%     lag_signs = {'neg','pos'};
-%     tmp = get_activity_map_interp([map_results.vals.z.neg_lag map_results.vals.z.pos_lag],...
-%         fib, map_results.str.info.voxel_size,...
-%         'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
-%         'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
-%         'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],'incl_plot_info',1);  
-%     for i = 1:numel(lag_signs)
-%         map_results.interp.([lag_signs{i} '_lag']).vol = tmp.(['vol_' sprintf('%02d',i)]).interp;   % interpolated volume (z)
-%         map_results.interp.([lag_signs{i} '_lag']).n = tmp.(['vol_' sprintf('%02d',i)]).n_mice;     % #mice contrib to each voxel
-%         map_results.interp.([lag_signs{i} '_lag']).F = tmp.(['vol_' sprintf('%02d',i)]).interp_F;   % interpolant function
-%         map_results.interp.([lag_signs{i} '_lag']).vol_r = tanh(map_results.interp.([lag_signs{i} '_lag']).vol); % r for visualization
-%     end
-%     map_results.info = tmp.info;    
-%     save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
-% end
-% 
-% 
-% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% % 3. maps: moran
-% map_results = load_if_exist(fullfile(save_dir1,'map_results.mat'));
-% lag_signs = {'neg','pos'};
-% 
-% % 3a. first determine proper neighborhood cube width
-% % 3ai. first figure out a distance based on each mouse's coverage
-% if ~isfield(map_results,'moran') || ~isfield(map_results.moran,'neighborhood') || ...
-%         ~isfield(map_results.moran.neighborhood,'mouse_neighborhood')
-%     cohort_min_fib = round(mean(cellfun(@(x) sum(ismember(fib.mouse,x))^(1/3),mice)));
-%     tmp = get_mouse_neighborhood_r(fib,'min_n_fibs',cohort_min_fib);
-%     map_results.moran.neighborhood.mouse_neighborhood.n_fibs = cohort_min_fib;
-%     map_results.moran.neighborhood.mouse_neighborhood.mm = max(structfun(@(x) x.r,tmp));
-%     map_results.moran.neighborhood.mouse_neighborhood.vox = round(max(structfun(@(x) x.r,tmp))/map_results.str.info.voxel_size);
-%     save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
-% end
-% 
-% % 3aii. now based on a quick scan of local moran's
-% % let's test the values around the mouse neighborhood and go up to 31
-% widths_to_test = 3:2:31;
-% if ~isfield(map_results,'moran') || ~isfield(map_results.moran,'neighborhood') || ...
-%     ~isfield(map_results.moran.neighborhood,'moran_neighborhood')
-%     tmp = struct;
-%     for i = 1:numel(lag_signs)
-%         value_array = map_results.vals.z.([lag_signs{i} '_lag']); % use z
-%         tmp.([lag_signs{i} '_lag']) = get_moran_neighborhood_width(...
-%             fib,value_array,map_results.str.info.voxel_size,widths_to_test,'n_it',500,...
-%             'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
-%             'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
-%             'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)]);
-%         tmp.([lag_signs{i} '_lag']).loc_max = tmp.([lag_signs{i} '_lag']).width(...
-%             find(islocalmax(tmp.([lag_signs{i} '_lag']).width_z),1,'first'));
-% %     end
-%     map_results.moran.neighborhood.moran_neighborhood = tmp;
-%     save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
-% end
-% 
-% % 3b. actual moran, based on that neighborhood
-% for i = 1:numel(lag_signs)
-%     if ~isfield(map_results.moran,[lag_signs{i} '_lag'])
-%         disp([lag_signs{i} '_lag: calculating local Moran''s I and null distr']);
-%         neighborhood_width = max([...
-%             map_results.moran.neighborhood.moran_neighborhood.([lag_signs{i} '_lag']).loc_max,...
-%             map_results.moran.neighborhood.mouse_neighborhood.vox,...
-%             ]);
-%         map_results.moran.neighborhood.width.([lag_signs{i} '_lag']) = neighborhood_width; % store this
-%         data = map_results.interp.([lag_signs{i} '_lag']).vol;
-%         map_results.moran.([lag_signs{i} '_lag']) = ...
-%             local_morans_I_bootstrap_null(...
-%             fib,map_results.vals.r.([lag_signs{i} '_lag']),...
-%             map_results.str.info.voxel_size,'n_it',10000,'batch_size',1000,...
-%             'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
-%             'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
-%             'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],...
-%             'prctiles',[95 97.5 99 99.5 99.9],'save_null',fullfile(save_dir1,['null_moran_' lag_signs{i} '_lag.mat']),...
-%             'weight_matrix',ones(neighborhood_width,neighborhood_width,neighborhood_width));
-%         save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
-%     end
-% end
-% % 3c. significant hotspot
-% for i = 1:numel(lag_signs)
-%     if ~isfield(map_results.moran.([lag_signs{i} '_lag']),'sig')    
-%         map_results.moran.([lag_signs{i} '_lag']) = local_morans_I_sig_moran(...
-%             map_results.moran.([lag_signs{i} '_lag']),...
-%             fullfile(save_dir1,['null_moran_' lag_signs{i} '_lag.mat']),...
-%             'mask',map_results.str.striatum_mask,'generate_rand',10000);  
-%         save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
-%     end
-% end
-% 
-%     
+
+if sensor_mice == 1
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 2. maps: interpolated
+
+% load if available
+map_results = load_if_exist(fullfile(save_dir1,'map_results.mat'));
+
+% size & striatum mask
+if ~isfield(map_results,'str')
+    voxel_size = 0.05;
+    str = get_striatum_vol_mask(...
+        [min(fib.fiber_bottom_AP) max(fib.fiber_bottom_AP)],... % AP_range
+        [min(fib.fiber_bottom_ML) max(fib.fiber_bottom_ML)],... % ML_range
+        [min(fib.fiber_bottom_DV) max(fib.fiber_bottom_DV)],... % DV_range
+        voxel_size);
+    map_results.str = str;
+end
+
+% vals
+map_results.vals.z = cc_lags_distr.lag_gm.weighted_r_z;
+map_results.vals.r = tanh(cc_lags_distr.lag_gm.weighted_r_z);
+map_results.vals.sig = cc_lags_distr.lag_gm.weighted_r_z_sig;
+
+
+% smooth maps
+if ~isfield(map_results,'info')    
+    tmp = get_activity_map_interp(map_results.vals.z,...
+        fib, map_results.str.info.voxel_size,...
+        'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+        'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+        'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],'incl_plot_info',1);  
+    % for convenience
+    for i = 1:size(map_results.vals.z,2)
+        map_results.interp.(['gmm_' num2str(i)]).vol = tmp.(['vol_' sprintf('%02d',i)]).interp;   % interpolated volume (z)
+        map_results.interp.(['gmm_' num2str(i)]).n = tmp.(['vol_' sprintf('%02d',i)]).n_mice;     % #mice contrib to each voxel
+        map_results.interp.(['gmm_' num2str(i)]).F = tmp.(['vol_' sprintf('%02d',i)]).interp_F;   % interpolant function
+        map_results.interp.(['gmm_' num2str(i)]).vol_r = tanh(map_results.interp.(['gmm_' num2str(i)]).vol); % r for visualization
+    end
+    map_results.info = tmp.info;    
+    save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
+end
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 3. maps: moran
+map_results = load_if_exist(fullfile(save_dir1,'map_results.mat'));
+
+% 3a. first determine proper neighborhood cube width
+% 3ai. first figure out a distance based on each mouse's coverage
+if ~isfield(map_results,'moran') || ~isfield(map_results.moran,'neighborhood') || ...
+        ~isfield(map_results.moran.neighborhood,'mouse_neighborhood')
+    cohort_min_fib = round(mean(cellfun(@(x) sum(ismember(fib.mouse,x))^(1/3),mice)));
+    tmp = get_mouse_neighborhood_r(fib,'min_n_fibs',cohort_min_fib);
+    map_results.moran.neighborhood.mouse_neighborhood.n_fibs = cohort_min_fib;
+    map_results.moran.neighborhood.mouse_neighborhood.mm = max(structfun(@(x) x.r,tmp));
+    map_results.moran.neighborhood.mouse_neighborhood.vox = round(max(structfun(@(x) x.r,tmp))/map_results.str.info.voxel_size);
+    save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
+end
+
+% 3aii. now based on a quick scan of local moran's
+% let's test the values around the mouse neighborhood and go up to 31
+widths_to_test = 3:2:31;
+if ~isfield(map_results,'moran') || ~isfield(map_results.moran,'neighborhood') || ...
+    ~isfield(map_results.moran.neighborhood,'moran_neighborhood')
+    tmp = struct;
+    for i = 1:size(map_results.vals.z,2)
+        value_array = map_results.vals.z(:,i); % use z
+        tmp.(['gmm_' num2str(i)]) = get_moran_neighborhood_width(...
+            fib,value_array,map_results.str.info.voxel_size,widths_to_test,'n_it',500,...
+            'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+            'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+            'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)]);
+        tmp.(['gmm_' num2str(i)]).loc_max = tmp.(['gmm_' num2str(i)]).width(...
+            find(islocalmax(tmp.(['gmm_' num2str(i)]).width_z),1,'first'));
+    end
+    map_results.moran.neighborhood.moran_neighborhood = tmp;
+    save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
+end
+
+widths_to_test = 33:2:51;
+tmp = struct;
+for i = 1:size(map_results.vals.z,2)
+    value_array = map_results.vals.z(:,i); % use z
+    tmp.(['gmm_' num2str(i)]) = get_moran_neighborhood_width(...
+        fib,value_array,map_results.str.info.voxel_size,widths_to_test,'n_it',500,...
+        'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+        'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+        'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)]);
+    tmp.(['gmm_' num2str(i)]).loc_max = tmp.(['gmm_' num2str(i)]).width(...
+        find(islocalmax(tmp.(['gmm_' num2str(i)]).width_z),1,'first'));
+end
+save(fullfile(save_dir1,'tmp_neighborhood.mat'),'-struct','tmp','-v7.3')
+    
+    
+
+
+
+% 3b. actual moran, based on that neighborhood
+for i = 1:size(map_results.vals.z,2)
+    if ~isfield(map_results.moran,['gmm_' num2str(i)])
+        disp(['gmm_' num2str(i) ': calculating local Moran''s I and null distr']);
+        neighborhood_width = max([...
+            map_results.moran.neighborhood.moran_neighborhood.(['gmm_' num2str(i)]).loc_max,...
+            map_results.moran.neighborhood.mouse_neighborhood.vox,...
+            ]);
+        map_results.moran.neighborhood.width.(['gmm_' num2str(i)]) = neighborhood_width; % store this
+        data = map_results.interp.(['gmm_' num2str(i)]).vol;
+        map_results.moran.(['gmm_' num2str(i)]) = ...
+            local_morans_I_bootstrap_null(...
+            fib,map_results.vals.r(:,i),...
+            map_results.str.info.voxel_size,'n_it',10000,'batch_size',1000,...
+            'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+            'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+            'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],...
+            'prctiles',[95 97.5 99 99.5 99.9],'save_null',fullfile(save_dir1,['null_moran_gmm_' num2str(i) '.mat']),...
+            'weight_matrix',ones(neighborhood_width,neighborhood_width,neighborhood_width));
+        save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
+    end
+end
+% 3c. significant hotspot
+for i = 1:numel(lag_signs)
+    if ~isfield(map_results.moran.(['gmm_' num2str(i)]),'sig')    
+        map_results.moran.(['gmm_' num2str(i)]) = local_morans_I_sig_moran(...
+            map_results.moran.(['gmm_' num2str(i)]),...
+            fullfile(save_dir1,['null_moran_gmm_' num2str(i) '.mat']),...
+            'mask',map_results.str.striatum_mask,'generate_rand',10000);  
+        save(fullfile(save_dir1,'map_results.mat'),'-struct','map_results','-v7.3')
+    end
+end
+
+    
 % %   
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % % 4. results figs
@@ -199,6 +217,7 @@ f1 = plot_lag_hist_and_components(cc_lags_distr,lag);
 %     peak_sign = sign(nanmean(this_map(:)));
 %     plot_contour_maps(this_map,map_results.str,[-(ceil(mm*10)/10):0.05:(ceil(mm*10)/10)],peak_sign,'peak_color',[]);    
 % end
+end
 % 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % % 5. some notes
@@ -279,17 +298,15 @@ function [cc_results,mouse_results] = get_cross_corr_results(mice,fib,data_dir,l
             mouse_results.(mouse_field) = session_cross_corrs;
         end
 
-        % extract useful statistics and add to results
-        if isempty(cc_results.mouse)
-            cc_stats = get_session_cross_corr_stats(session_cross_corrs,alpha_val);
-            cc_results.mouse = [cc_results.mouse; repmat({mouse},numel(session_cross_corrs.str_rois),1)];
-            cc_results.str_rois = [cc_results.str_rois; vec(session_cross_corrs.str_rois)];
-            cc_stats_fields = fieldnames(cc_results.r);
-            for f = 1:numel(cc_stats_fields)
-                cc_results.r.(cc_stats_fields{f}) = ...
-                    [cc_results.r.(cc_stats_fields{f});cc_stats.(cc_stats_fields{f})];
-            end
-        end
+        % extract useful statistics and add to results        
+        cc_stats = get_session_cross_corr_stats(mouse_results.(mouse_field),alpha_val);
+        cc_results.mouse = [cc_results.mouse; repmat({mouse},numel(mouse_results.(mouse_field).str_rois),1)];
+        cc_results.str_rois = [cc_results.str_rois; vec(mouse_results.(mouse_field).str_rois)];
+        cc_stats_fields = fieldnames(cc_results.r);
+        for f = 1:numel(cc_stats_fields)
+            cc_results.r.(cc_stats_fields{f}) = ...
+                [cc_results.r.(cc_stats_fields{f});cc_stats.(cc_stats_fields{f})];
+        end        
     end
 
     % save
@@ -379,11 +396,11 @@ function cc_lags_distr = get_cross_corr_lag_distr(mice,fib,data_dir,lag,...
     end
     
     % if we need to compile the data
-%     if ~isfield(cc_lags_distr.lag_hist,output_fields{end})
-%         % initialize
-%         for f = 1:numel(output_fields)                
-%             cc_lags_distr.lag_hist.(output_fields{f}) = [];
-%         end            
+    if ~isfield(cc_lags_distr.lag_hist,output_fields{end})
+        % initialize
+        for f = 1:numel(output_fields)                
+            cc_lags_distr.lag_hist.(output_fields{f}) = [];
+        end            
         % get per session cross-correlation and null cross-correlation 
         loc_signs = {'min','max'};
         for m = 1:numel(mice)        
@@ -441,63 +458,61 @@ function cc_lags_distr = get_cross_corr_lag_distr(mice,fib,data_dir,lag,...
                     end
                 end
             end                
-%         end
+        end
         if ~isempty(save_dir)
             save(fullfile(save_dir,'cross_corr_r_lag_results.mat'),'-struct','cc_lags_distr')
         end
     end
     
     % fit overall GM
-    if ~isfield(cc_lags_distr,'lag_gm') || ~isfield(cc_lags_distr.lag_gm,'all')
+    if ~isfield(cc_lags_distr,'lag_gm')
         [this_gm,this_gof] = fit_gmm_to_hist(cc_lags_distr.lag_hist.gm_mu,...
-            'gof','BIC','choose','elbow','max_n',9);
-        cc_lags_distr.lag_gm.all.gm = this_gm;
-        cc_lags_distr.lag_gm.all.gof = this_gof;
-        cc_lags_distr.lag_gm.all.gm_r = get_gmm_weighted_mean(permute(null_r_95,[3 2 1]),...
-            mouse_data.lags.(['loc_' loc_signs{s}]).gm{r},-lag:lag); 
-        [cc_lags_distr.lag_gm.all.main_neg_idx, cc_lags_distr.lag_gm.all.main_pos_idx] = ...
-            get_main_neg_pos_gmm_idx(cc_lags_distr.lag_gm.all.gm);
+            'gof','BIC','choose','elbow','max_n',9,'n_rep',50);
+        cc_lags_distr.lag_gm.gm = this_gm;
+        cc_lags_distr.lag_gm.gof = this_gof;        
+        [cc_lags_distr.lag_gm.main_neg_idx, cc_lags_distr.lag_gm.main_pos_idx] = ...
+            get_main_neg_pos_gmm_idx(cc_lags_distr.lag_gm.gm);
     end
-    
-    % get weighted means for each mouse
-    cc_lags_distr.lag_gm.all.weighted_r = [];
-    cc_lags_distr.lag_gm.all.weighted_null = [];
-    cc_lags_distr.lag_gm.all.weighted_r_z = [];
-    cc_lags_distr.lag_gm.all.weighted_null_z = [];
-    for m = 1:numel(mice)
-        mouse = mice{m};
-        mouse_field = get_mouse_field(mouse);
-        disp(['     getting GM-weighted means: ' mouse])
-        mouse_cc = mouse_results.(mouse_field);
-        for r = 1:numel(mouse_cc.str_rois)
-            this_weighted_r = get_gmm_weighted_mean(...
-                permute(mouse_cc.r(r,:,:),[3 2 1]),cc_lags_distr.lag_gm.all.gm,-lag:lag);
-            this_weighted_z = get_gmm_weighted_mean(...
-                permute(atanh(mouse_cc.r(r,:,:)),[3 2 1]),cc_lags_distr.lag_gm.all.gm,-lag:lag);
-            cc_lags_distr.lag_gm.all.weighted_r = [cc_lags_distr.lag_gm.all.weighted_r;...
-                mean(this_weighted_r)];
-            cc_lags_distr.lag_gm.all.weighted_r_z = [cc_lags_distr.lag_gm.all.weighted_r_z;...
-                mean(this_weighted_z)];
-            % for null distributions, get the component-weighted 95th
-            % prctile max perm statistic
-            this_weighted_null = get_gmm_weighted_mean(...
-                permute(repmat(prctile(mouse_cc.null(r,:,:),95,2),1,numel(-lag:lag),1),[3 2 1]),...
-                cc_lags_distr.lag_gm.all.gm,-lag:lag);
-            this_weighted_null_z = get_gmm_weighted_mean(...
-                permute(repmat(prctile(atanh(mouse_cc.null(r,:,:)),95,2),1,numel(-lag:lag),1),[3 2 1]),...
-                cc_lags_distr.lag_gm.all.gm,-lag:lag);            
-            cc_lags_distr.lag_gm.all.weighted_null = [cc_lags_distr.lag_gm.all.weighted_null;...
-                mean(this_weighted_null)];
-            cc_lags_distr.lag_gm.all.weighted_null_z = [cc_lags_distr.lag_gm.all.weighted_null_z;...
-                mean(this_weighted_null_z)];
+        % get weighted means for each mouse
+        cc_lags_distr.lag_gm.weighted_r = [];
+        cc_lags_distr.lag_gm.weighted_null = [];
+        cc_lags_distr.lag_gm.weighted_r_z = [];
+        cc_lags_distr.lag_gm.weighted_null_z = [];
+        for m = 1:numel(mice)
+            mouse = mice{m};
+            mouse_field = get_mouse_field(mouse);
+            disp(['     getting GM-weighted means: ' mouse])
+            mouse_cc = mouse_results.(mouse_field);
+            for r = 1:numel(mouse_cc.str_rois)
+                this_weighted_r = get_gmm_weighted_mean(...
+                    permute(mouse_cc.r(r,:,:),[3 2 1]),cc_lags_distr.lag_gm.gm,-lag:lag);
+                this_weighted_z = get_gmm_weighted_mean(...
+                    permute(atanh(mouse_cc.r(r,:,:)),[3 2 1]),cc_lags_distr.lag_gm.gm,-lag:lag);
+                cc_lags_distr.lag_gm.weighted_r = [cc_lags_distr.lag_gm.weighted_r;...
+                    nanmean(this_weighted_r)];
+                cc_lags_distr.lag_gm.weighted_r_z = [cc_lags_distr.lag_gm.weighted_r_z;...
+                    nanmean(this_weighted_z)];
+                % for null distributions, get the component-weighted 95th
+                % prctile max perm statistic
+                this_weighted_null = get_gmm_weighted_mean(...
+                    permute(repmat(prctile(mouse_cc.null(r,:,:),95,2),1,numel(-lag:lag),1),[3 2 1]),...
+                    cc_lags_distr.lag_gm.gm,-lag:lag);
+                this_weighted_null_z = get_gmm_weighted_mean(...
+                    permute(repmat(prctile(atanh(mouse_cc.null(r,:,:)),95,2),1,numel(-lag:lag),1),[3 2 1]),...
+                    cc_lags_distr.lag_gm.gm,-lag:lag);            
+                cc_lags_distr.lag_gm.weighted_null = [cc_lags_distr.lag_gm.weighted_null;...
+                    nanmean(this_weighted_null)];
+                cc_lags_distr.lag_gm.weighted_null_z = [cc_lags_distr.lag_gm.weighted_null_z;...
+                    nanmean(this_weighted_null_z)];
+            end
         end
-    end
-    % significant if mean component-weighted r exceeds mean
-    % component-weighted null 95% prctile
-    cc_lags_distr.lag_gm.all.weighted_r_sig = ...
-        abs(cc_lags_distr.lag_gm.all.weighted_r) > cc_lags_distr.lag_gm.all.weighted_null;
-    cc_lags_distr.lag_gm.all.weighted_r_z_sig = ...
-        abs(cc_lags_distr.lag_gm.all.weighted_r_z) > cc_lags_distr.lag_gm.all.weighted_null_z;
+        % significant if mean component-weighted r exceeds mean
+        % component-weighted null 95% prctile
+        cc_lags_distr.lag_gm.weighted_r_sig = ...
+            abs(cc_lags_distr.lag_gm.weighted_r) > cc_lags_distr.lag_gm.weighted_null;
+        cc_lags_distr.lag_gm.weighted_r_z_sig = ...
+            abs(cc_lags_distr.lag_gm.weighted_r_z) > cc_lags_distr.lag_gm.weighted_null_z;
+%     end
     
     % save
     if ~isempty(save_dir)
@@ -642,10 +657,10 @@ function mouse_data = get_mouse_cross_corr_lag_distr(mouse,fib,data_dir,lag,min_
                 [this_gm,this_gof] = fit_gmm_to_hist(X,'gof','BIC','choose','elbow','max_n',9);
                 mouse_data.lags.(['loc_' loc_signs{s}]).gm_gof{r} = this_gof;
                 mouse_data.lags.(['loc_' loc_signs{s}]).gm{r} = this_gm;
-            else
-                [this_gm,~] = fit_gmm_to_hist(X,'gof','BIC','choose','elbow','max_n',9,...
-                    'gof_vals',mouse_data.lags.(['loc_' loc_signs{s}]).gm_gof{r});                
-                mouse_data.lags.(['loc_' loc_signs{s}]).gm{r} = this_gm;
+%             else
+%                 [this_gm,~] = fit_gmm_to_hist(X,'gof','BIC','choose','elbow','max_n',9,...
+%                     'gof_vals',mouse_data.lags.(['loc_' loc_signs{s}]).gm_gof{r});                
+%                 mouse_data.lags.(['loc_' loc_signs{s}]).gm{r} = this_gm;
             end
             
             % GMM-weighted r and null
@@ -765,7 +780,7 @@ end
 function null_cross_corrs = get_null_cross_corrs(mouse,fib,data_dir,lag,varargin)
     %%%  parse optional inputs %%%
     ip = inputParser;
-    ip.addParameter('Fc_field','Fc');   % which DF/F field to use
+    ip.addParameter('Fc_field','Fc');       % which DF/F field to use
     ip.addParameter('Fc_artifact_mask',[]); % the field which contains the artifact mask; leave blank if N/A
     ip.addParameter('datafile_suffix','');  % datafile format [mouse]_[expdir][datafile_suffix].mat; default '', assume format MOUSE_EXPDIR.mat 
     ip.addParameter('n_it',5000);           % #iterations to run for null distribution
@@ -927,7 +942,11 @@ function n = get_required_corr_n(X,Y,r_target,alpha,power,n_lags)
     
     % because our signals have autocorrelation, the required n is more than 
     % that; let's figure out what n we need to get that effective n
-    n = max([req_n*sum(autocorr(X,n_lags)) req_n*sum(autocorr(Y,n_lags))]);
+    try
+        n = max([req_n*sum(autocorr(X,n_lags)) req_n*sum(autocorr(Y,n_lags))]);
+    catch exception
+        n = nan;
+    end
 end
 
 
@@ -1107,8 +1126,9 @@ end
 function f = plot_lag_hist_and_components(cc_lags_distr,lag,varargin)
 
     %%%  parse optional inputs %%%
-    ip = inputParser;
-    ip.addParameter('z_to_r',1);                     % use back-transformed z                       
+    ip = inputParser;    
+    ip.addParameter('sr',18);                        % sr
+    ip.addParameter('z_to_r',1);                     % use back-transformed z
     ip.addParameter('r_binEdges',[-0.6:0.05:0.6]);   % histogram bin edges
     ip.parse(varargin{:});
     for j=fields(ip.Results)'
@@ -1118,63 +1138,55 @@ function f = plot_lag_hist_and_components(cc_lags_distr,lag,varargin)
 
     % figure
     f = figure('Position',[400 200 550 850]);
-    
+    n_rows = 1 + size(cc_lags_distr.lag_gm.weighted_r,2);
     % lag distribution
-    subplot(3,1,1)
-    histogram(cc_lags_distr.lag_hist.gm_mu,'BinEdges',[-18:18],'FaceColor',lines(1),'HandleVisibility','off')
+    subplot(n_rows,1,1)
+    histogram(cc_lags_distr.lag_hist.gm_mu/sr*1000,'BinEdges',[-18:18]/sr*1000,'FaceColor',lines(1),'HandleVisibility','off')
     hold on
     
-    for i = 1:numel(cc_lags_distr.lag_gm.all.gm.mu)
-        xline(cc_lags_distr.lag_gm.all.gm.mu(i),'-','Color',[.5 .5 .5],'LineWidth',2,'HandleVisibility','off')
+    for i = 1:numel(cc_lags_distr.lag_gm.gm.mu)
+        xline(cc_lags_distr.lag_gm.gm.mu(i)/sr*1000,'-','Color',[.5 .5 .5],'LineWidth',2,'HandleVisibility','off')
     end
-    xline(cc_lags_distr.lag_gm.all.gm.mu(cc_lags_distr.lag_gm.all.main_neg_idx),'--b','LineWidth',2)
-    xline(cc_lags_distr.lag_gm.all.gm.mu(cc_lags_distr.lag_gm.all.main_pos_idx),'--r','LineWidth',2)
+    xline(cc_lags_distr.lag_gm.gm.mu(cc_lags_distr.lag_gm.main_neg_idx)/sr*1000,'--b','LineWidth',2)
+    xline(cc_lags_distr.lag_gm.gm.mu(cc_lags_distr.lag_gm.main_pos_idx)/sr*1000,'--r','LineWidth',2)
     ylabel('Count')
-    xlabel('Lag (frame)')
-    set(gca,'YColor',lines(1),'XLim',[-lag lag])
-    mus = round([cc_lags_distr.lag_gm.all.gm.mu(cc_lags_distr.lag_gm.all.main_neg_idx),...
-        cc_lags_distr.lag_gm.all.gm.mu(cc_lags_distr.lag_gm.all.main_pos_idx)]/lag*1000);
+    xlabel('Lag (ms)')
+    set(gca,'YColor',lines(1),'XLim',[-lag lag]/sr*1000)
+    mus = round([cc_lags_distr.lag_gm.gm.mu(cc_lags_distr.lag_gm.main_neg_idx),...
+        cc_lags_distr.lag_gm.gm.mu(cc_lags_distr.lag_gm.main_pos_idx)]/lag*1000);
     mus = arrayfun(@(x) num2str(x),mus,'UniformOutput',false);
     mus = cellfun(@(x) [x ' ms'],mus,'UniformOutput',false);
     legend(mus,'Location','best')
     yyaxis right
-    plot(-lag:lag,pdf(cc_lags_distr.lag_gm.all.gm,vec(-lag:lag)),'-k','HandleVisibility','off')
+    plot((-lag:0.1:lag)/sr*1000,pdf(cc_lags_distr.lag_gm.gm,vec(-lag:0.1:lag)),'-k','HandleVisibility','off')
     set(gca,'YColor','k')
     ylabel('GMM pdf')
     
     title('Significant Lags')
     
-    % negative lag
-    subplot(3,1,2)
-    hold on
-    if z_to_r == 1
-        all_mu = tanh(cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_neg_idx));
-        insig_mu = all_mu(cc_lags_distr.lag_gm.all.weighted_r_z_sig(:,cc_lags_distr.lag_gm.all.main_neg_idx)==0);
-    else
-        all_mu = cc_lags_distr.lag_gm.all.weighted_r(:,cc_lags_distr.lag_gm.all.main_neg_idx);
-        insig_mu = all_mu(cc_lags_distr.lag_gm.all.weighted_r_sig(:,cc_lags_distr.lag_gm.all.main_neg_idx)==0);
-    end
-    histogram(all_mu,'BinEdges',r_binEdges,'FaceColor',[.8 .8 .8],'FaceAlpha',1)
-    histogram(insig_mu,'BinEdges',r_binEdges,'FaceColor',[.5 .5 .5],'FaceAlpha',1)
-    xlabel('Corr r')
-    ylabel('Count')   
-    title('ACh \rightarrow DA','interpreter','tex','Color','b')
+    % correlation values at the lags
+    [this_mu,mu_idx] = sort(cc_lags_distr.lag_gm.gm.mu/sr*1000);
+    for g = 1:numel(this_mu)
     
-    % positive lag
-    subplot(3,1,3)
-    hold on
-    if z_to_r == 1
-        all_mu = cc_lags_distr.lag_gm.all.weighted_r_z(:,cc_lags_distr.lag_gm.all.main_pos_idx);
-        insig_mu = all_mu(cc_lags_distr.lag_gm.all.weighted_r_z_sig(:,cc_lags_distr.lag_gm.all.main_pos_idx)==0);
-    else
-        all_mu = cc_lags_distr.lag_gm.all.weighted_r(:,cc_lags_distr.lag_gm.all.main_pos_idx);
-        insig_mu = all_mu(cc_lags_distr.lag_gm.all.weighted_r_sig(:,cc_lags_distr.lag_gm.all.main_pos_idx)==0);
-    end    
-    histogram(all_mu,'BinEdges',r_binEdges,'FaceColor',[.8 .8 .8],'FaceAlpha',1)
-    histogram(insig_mu,'BinEdges',r_binEdges,'FaceColor',[.5 .5 .5],'FaceAlpha',1)
-    xlabel('Corr r')
-    ylabel('Count')
-    title('DA \rightarrow ACh','interpreter','tex','Color','r')
+        subplot(n_rows,1,g+1)
+        hold on
+        if z_to_r == 1
+            all_mu = tanh(cc_lags_distr.lag_gm.weighted_r_z(:,mu_idx(g)));
+            insig_mu = all_mu(cc_lags_distr.lag_gm.weighted_r_z_sig(:,mu_idx(g))==0);
+        else
+            all_mu = cc_lags_distr.lag_gm.weighted_r(:,mu_idx(g));
+            insig_mu = all_mu(cc_lags_distr.lag_gm.weighted_r_sig(:,mu_idx(g))==0);
+        end
+        histogram(all_mu,'BinEdges',r_binEdges,'FaceColor',[.8 .8 .8],'FaceAlpha',1)
+        histogram(insig_mu,'BinEdges',r_binEdges,'FaceColor',[.5 .5 .5],'FaceAlpha',1)
+        xlabel('Corr r')
+        ylabel('Count')   
+        if this_mu(g) < 0            
+            title(['ACh \rightarrow DA: ' num2str(round(this_mu(g)))],'interpreter','tex','Color','b')
+        else
+            title(['DA \rightarrow ACh: ' num2str(round(this_mu(g)))],'interpreter','tex','Color','r')
+        end
+    end
 
 end
 

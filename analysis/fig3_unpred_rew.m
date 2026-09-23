@@ -10,7 +10,8 @@ mice = vertcat(mice{:});
 fib = cohort_fib_table(data_dir,mice);
 % load corr hotspot
 save_dir1 = fullfile(data_dir,'results','1_cross_corr');
-%corr_hotspot = 
+cc_map_info = load(fullfile(save_dir1,'map_results.mat'),'info','str');
+
 % directory for saving (interim) results
 save_dir3 = fullfile(data_dir,'results','3_unpred_rew');
 if ~exist(save_dir3,'dir')
@@ -26,35 +27,50 @@ if isempty(fieldnames(rew_data))
         'Fc_artifact_mask','artifact_mask'); % useful to save this
     save(fullfile(save_dir3,'rew_data.mat'),'-struct','rew_data','-v7.3')
 end
-
  
-% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 2. cross correlation of trial-by-trial ACh w trial-by-trial DA peak 
-rew_da = load_if_exist(fullfile(save_dir3,'rew_DA_peak_corr.mat'));
-if isempty(fieldnames(rew_da))
-    rew_da = get_DA_peak_rew_cc(rew_data,10000);
-    save(fullfile(save_dir3,'rew_DA_peak_corr.mat'),'-struct','rew_da')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 2. overall cross correlation profile
+rew_cc = load_if_exist(fullfile(save_dir3,'rew_DA_ACh_corr.mat'));
+% trial-by-trial ACh w trial-by-trial DA peak 
+if ~isfield(rew_cc,'overall') || ~isfield(rew_cc.overall,'DA')
+    disp('estimating overall DA peak corr')
+    % correlation of DA peak with ACh 0-500ms after; DA peak has to happen within 1s after rew
+    rew_cc.overall.DA = get_overall_peak_rew_cc(rew_data,'DA',10000,...
+        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',0:18); 
+    save(fullfile(save_dir3,'rew_DA_ACh_corr.mat'),'-struct','rew_cc','-v7.3')
+end
+% trial-by-trial DA w trial-by-trial ACh peak 
+if ~isfield(rew_cc,'overall') || ~isfield(rew_cc.overall,'ACh')       
+    disp('estimating overall ACh peak corr')
+    % correlation of ACh peak with DA 0-500ms after; ACh peak has to happen within +/-500ms
+    rew_cc.overall.ACh = get_overall_peak_rew_cc(rew_data,'ACh',10000,...
+        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',-9:9);         
+    save(fullfile(save_dir3,'rew_DA_ACh_corr.mat'),'-struct','rew_cc','-v7.3')    
 end
 
-% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 3. cross correlation of trial-by-trial DA w trial-by-trial ACh peak 
-rew_ach = load_if_exist(fullfile(save_dir3,'rew_ACh_peak_corr.mat'));
-if isempty(fieldnames(rew_ach))
-    rew_ach = get_ACh_peak_rew_cc(rew_data,10000);
-    save(fullfile(save_dir3,'rew_ACh_peak_corr.mat'),'-struct','rew_ach')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 3. robust estimation of correlation magnitudes and lags via repeated
+% random half splits
+if ~isfield(rew_cc,'rep_split') || ~isfield(rew_cc.rep_split,'DA')
+    disp('estimating repeated half-split DA peak corr')
+    rew_cc.rep_split.DA = get_rep_split_peak_rew_cc(rew_data,'DA',1000,...
+        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',0:18); 
+    save(fullfile(save_dir3,'rew_DA_ACh_corr.mat'),'-struct','rew_cc','-v7.3')
 end
+% trial-by-trial DA w trial-by-trial ACh peak 
+if ~isfield(rew_cc,'rep_split') || ~isfield(rew_cc.rep_split,'ACh')    
+    disp('estimating repeated half-split ACh peak corr')
+    rew_cc.rep_split.ACh = get_rep_split_peak_rew_cc(rew_data,'ACh',1000,...
+        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',-9:9);       
+    save(fullfile(save_dir3,'rew_DA_ACh_corr.mat'),'-struct','rew_cc','-v7.3')    
+end
+
 % 
 % 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % % 3. maps
 % 
 % % size & striatum mask
-% voxel_size = 0.05;
-% str = get_striatum_vol_mask(...
-%     [min(fib.fiber_bottom_AP) max(fib.fiber_bottom_AP)],... % AP_range
-%     [min(fib.fiber_bottom_ML) max(fib.fiber_bottom_ML)],... % ML_range
-%     [min(fib.fiber_bottom_DV) max(fib.fiber_bottom_DV)],... % DV_range
-%     voxel_size);
 % 
 % % smooth maps and moran calculations
 % results = struct;
@@ -202,14 +218,17 @@ function rew_data = get_all_rew_data(mice,fib,data_dir,varargin)
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% get_DA_peak_rew_cc(
-function rew_da = get_DA_peak_rew_cc(rew_data,null_it,varargin)
+% get_overall_peak_rew_cc
+function results = get_overall_peak_rew_cc(rew_data,ref_channel,null_it,varargin)
 
     %%%  parse optional inputs %%%
     ip = inputParser;
-    ip.addParameter('eta_idx',-18:27); 
-    ip.addParameter('corr_idx',0:9); 
-    ip.addParameter('ref_idx_of_int',0:18); 
+    ip.addParameter('eta_idx',-18:27);          % event triggered average indices
+    ip.addParameter('corr_idx',0:9);            % window of channel_2 data after channel_1 event to correlate
+    ip.addParameter('ref_idx_of_int',0:18);     % window of data to look for event in channel_1
+    ip.addParameter('loc_tr_window',9);         % window of data to look for event in channel_1; this might be a bit reduncant with corr_idx
+    ip.addParameter('event_polarity',1);        % peak(1) or trough(-1) channel_1 event
+    ip.addParameter('update_n',500);            % how often to update via display
     ip.parse(varargin{:});
     for j=fields(ip.Results)'
         eval([j{1} '=ip.Results.' j{1} ';']);
@@ -217,83 +236,113 @@ function rew_da = get_DA_peak_rew_cc(rew_data,null_it,varargin)
     
     % loop
     mice = fieldnames(rew_data);
-
+    ch1 = ref_channel;
+    ch2 = setdiff(fieldnames(rew_data.(mice{1})),ch1); 
+    ch2 = ch2{1};
+    
     for m = 1:numel(mice)
         mouse = mice{m};         
-        disp(mouse)
-    %     mouse_idx = ismember(fib.mouse,mouse);
-        da_act = rew_data.(mouse).DA.activity;
-        ach_act = rew_data.(mouse).ACh.activity;
-        % correlate ACh with DA peak magnitude
-        mouse_corr = raster_transient_correlation(da_act,ach_act,1,...
+        disp(['   ' mouse])
+        ch1_act = rew_data.(mouse).(ch1).activity;
+        ch2_act = rew_data.(mouse).(ch2).activity;
+        % correlate ch2 (e.g., ACh) with ch1 (e.g., DA) peak magnitude
+        mouse_corr = raster_transient_correlation(ch1_act,ch2_act,event_polarity,...
             'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
-                'corr_idx_of_int',corr_idx,'local_transient_window',9);      
-        null_r = nan(null_it,size(da_act,2));
+            'corr_idx_of_int',corr_idx,'local_transient_window',loc_tr_window);      
+        null_r = nan(null_it,size(ch1_act,2));
         % now null: shuffle the trials
         for i = 1:null_it      
-            if rem(i,500) == 0
+            if rem(i,update_n) == 0
                 disp(['     ' num2str(i)])
             end
-            this_ach = ach_act(:,:,randperm(size(ach_act,3)));
-            this_corr = raster_transient_correlation(da_act,this_ach,1,...
+            this_ch2 = ch2_act(:,:,randperm(size(ch2_act,3)));
+            this_corr = raster_transient_correlation(ch1_act,this_ch2,event_polarity,...
                 'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
-                'corr_idx_of_int',corr_idx,'local_transient_window',9);                                     
+                'corr_idx_of_int',corr_idx,'local_transient_window',loc_tr_window);                                        
             null_r(i,:) = max(abs(this_corr.corr.corr_r));
         end
-        for r = 1:size(da_act,2)
+        for r = 1:size(ch1_act,2)
             this_null_r = transpose(null_r(:,r));
             this_corr = abs(mouse_corr.corr.corr_r(:,r));
             mouse_corr.corr.null_p(:,r) = sum(repmat(this_null_r,size(this_corr,1),1) > this_corr,2)/numel(this_null_r);        
         end
-        rew_da.(mouse) = mouse_corr;
+        results.(mouse) = mouse_corr;
     end
 end
         
 
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% get_ACh_peak_rew_cc(
-function rew_ach = get_ACh_peak_rew_cc(rew_data,null_it,varargin)
+% get_rep_split_DA_peak_rew_cc
+function results = get_rep_split_peak_rew_cc(rew_data,ref_channel,rep_it,varargin)
 
     %%%  parse optional inputs %%%
     ip = inputParser;
-    ip.addParameter('eta_idx',-18:27);
-    ip.addParameter('ref_idx_of_int',-9:9);
-    ip.addParameter('corr_idx',0:9); 
+    ip.addParameter('eta_idx',-18:27);          % event triggered average indices
+    ip.addParameter('corr_idx',0:9);            % window of channel_2 data after channel_1 event to correlate
+    ip.addParameter('ref_idx_of_int',0:18);     % window of data to look for event in channel_1
+    ip.addParameter('loc_tr_window',9);         % window of data to look for event in channel_1; this might be a bit reduncant with corr_idx
+    ip.addParameter('event_polarity',1);        % peak(1) or trough(-1) channel_1 event
+    ip.addParameter('update_n',100);            % how often to update via display
     ip.parse(varargin{:});
     for j=fields(ip.Results)'
         eval([j{1} '=ip.Results.' j{1} ';']);
     end
     
     % loop
-    mice = fieldnames(rew_data);    
+    mice = fieldnames(rew_data);
+    ch1 = ref_channel;
+    ch2 = setdiff(fieldnames(rew_data.(mice{1})),ch1); 
+    ch2 = ch2{1};
+        
     for m = 1:numel(mice)
-        mouse = mice{m};   
-        disp(mouse)
-    %     mouse_idx = ismember(fib.mouse,mouse);
-        da_act = rew_data.(mouse).DA.activity;
-        ach_act = rew_data.(mouse).ACh.activity;
-        % correlate ACh with DA peak magnitude
-        mouse_corr = raster_transient_correlation(ach_act,da_act,1,...
-            'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
-            'corr_idx_of_int',corr_idx,'local_transient_window',9); 
-        null_r = nan(null_it,size(da_act,2));
-        % now null: shuffle the trials
-        for i = 1:null_it      
-            if rem(i,500) == 0
+        mouse = mice{m};         
+        disp(['   ' mouse])
+        ch1_act = rew_data.(mouse).(ch1).activity;
+        ch2_act = rew_data.(mouse).(ch2).activity;
+        
+        
+        ch1_act = rew_data.(mouse).(ch1).activity;
+        ch2_act = rew_data.(mouse).(ch2).activity;
+        results.(mouse).lag_idx = nan(rep_it,size(ch1_act,2));
+        results.(mouse).r = nan(rep_it,size(ch1_act,2));
+        for i = 1:rep_it
+            
+            if rem(i,update_n) == 0
                 disp(['     ' num2str(i)])
             end
-            this_da = da_act(:,:,randperm(size(da_act,3)));
-            this_corr = raster_transient_correlation(ach_act,this_da,1,...
+            
+            % random half-splits: 
+            % split 1 estimates the lag, split 2 estimates the magnitude
+            rand_idx = randperm(size(ch1_act,3));
+            split_i = floor(size(ch1_act,3)/2);
+            split1 = rand_idx(1:split_i);
+            split2 = rand_idx((split_i+1):numel(rand_idx));
+            ch1_split1 = ch1_act(:,:,split1);
+            ch1_split2 = ch1_act(:,:,split2);
+            ch2_split1 = ch2_act(:,:,split1);
+            ch2_split2 = ch2_act(:,:,split2);
+                        
+            % estimate best lag from split 1            
+            mouse_corr = raster_transient_correlation(ch1_split1,ch2_split1,event_polarity,...
                 'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
-            'corr_idx_of_int',corr_idx,'local_transient_window',9); 
-            null_r(i,:) = max(abs(this_corr.corr.corr_r));
+                'corr_idx_of_int',corr_idx,'local_transient_window',loc_tr_window);      
+            
+            % get lag of strongest corr
+            [~,best_lag] = max(abs(mouse_corr.corr.corr_r));
+            [~,best_lag_idx] = max(abs(mouse_corr.corr.corr_r),[],'linear');
+            
+            % now estimate the corr in split2 of that lag
+            mouse_corr = raster_transient_correlation(ch1_split2,ch2_split2,event_polarity,...
+                'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
+                'corr_idx_of_int',corr_idx,'local_transient_window',loc_tr_window);   
+            corr_at_best_lag = mouse_corr.corr.corr_r(best_lag_idx);
+            
+            % add to results
+            results.(mouse).lag_idx(i,:) = best_lag;
+            results.(mouse).r(i,:) = corr_at_best_lag;
         end
-        for r = 1:size(da_act,2)
-            this_null_r = transpose(null_r(:,r));
-            this_corr = abs(mouse_corr.corr.corr_r(:,r));
-            mouse_corr.corr.null_p(:,r) = sum(repmat(this_null_r,size(this_corr,1),1) > this_corr,2)/numel(this_null_r);        
-        end
-        rew_ach.(mouse) = mouse_corr;
+                   
     end
 end
 

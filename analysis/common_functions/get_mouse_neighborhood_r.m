@@ -45,7 +45,7 @@ function mouse_neighborhood = get_mouse_neighborhood_r(fib,varargin)
         fib_dist = sort(fib_dist,1);
         dist_req = max(fib_dist(this_min_n_fibs,:));
         % output
-        mouse_neighborhood.(mouse).r = dist_req;
-        mouse_neighborhood.(mouse).n = this_min_n_fibs;
+        mouse_neighborhood.(get_mouse_field(mouse)).r = dist_req;
+        mouse_neighborhood.(get_mouse_field(mouse)).n = this_min_n_fibs;
     end
 end

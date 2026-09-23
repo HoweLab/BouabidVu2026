@@ -33,12 +33,12 @@ if ~isfield(mut_k_results,'mut_k_sweep')
     mut_k_results.k_vals = 1.5:0.5:6;
     mut_k_results.n_val = 3;
     mut_k_results.mut_k_sweep = mutant_k_sweep(data_dir,mutant_mice,fib,'n_val',mut_k_results.n_val,'k_vals',mut_k_results.k_vals);    
-    save(fullfile(save_dir0,'mut_k_results.mat'),'-struct','results')
+    save(fullfile(save_dir0,'mut_k_results.mat'),'-struct','mut_k_results')
 end
 % estimate a k for each channel, separately for + and -
 if ~isfield(mut_k_results,'k_result')
     [~,mut_k_results.k_result] = mutant_k(mut_k_results.mut_k_sweep,mut_k_results.k_vals,'perc_time_thresh',0.05);
-    save(fullfile(save_dir0,'mut_k_results.mat'),'-struct','results')
+    save(fullfile(save_dir0,'mut_k_results.mat'),'-struct','mut_k_results')
 end
 % all we need is the mad_k
 mad_k.green.pos = mut_k_results.k_result.median(1,1);
@@ -96,15 +96,15 @@ for m = 1:numel(all_mice)
         for d = 1:numel(exp_dirs)
             datapath = fullfile(data_dir,mouse,exp_dirs{d},[mouse '_' exp_dirs{d} '.mat']);
             data = load(datapath);
-            if ~isfield(data.(channel_names{1}),'sig') && ~isfield(data.(channel_names{2}),'sig')
+            if ~isfield(data.(channel_names{1}),'sig') || ~isfield(data.(channel_names{2}),'sig')
                 for c = 1:numel(channel_names)
                     channel_name = channel_names{c};            
                     if contains(channel_name,'ACh')
-                        pos_mad_k = mad_k.green(1);
-                        neg_mad_k = mad_k.green(2);
+                        pos_mad_k = mad_k.green.pos;
+                        neg_mad_k = mad_k.green.neg;
                     else
-                        pos_mad_k = mad_k.red(1);
-                        neg_mad_k = mad_k.red(2);
+                        pos_mad_k = mad_k.red.pos;
+                        neg_mad_k = mad_k.red.neg;
                     end
                     sig_check = check_data_signal(data.(channel_name),pos_mad_k,neg_mad_k);
                     data.(channel_name).sig = sig_check(:,1);

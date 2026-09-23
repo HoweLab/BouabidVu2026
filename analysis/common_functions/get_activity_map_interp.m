@@ -70,12 +70,12 @@ for i = 1:size(value_array,2)
                 vals(mouse_idx),...
                 'natural','none');
         else % if we already have the interpolant, just update the Values
-            F = interp_struct.(mice{m});
+            F = interp_struct.(get_mouse_field(mice{m}));
             F.Values = vals(mouse_idx);
         end
         % interpolated volume
         mouse_interp(:,:,:,m) = F(xx,yy,zz);
-        output.(['vol_' sprintf('%02d',i)]).interp_F.(mice{m}) = F;
+        output.(['vol_' sprintf('%02d',i)]).interp_F.(get_mouse_field(mice{m})) = F;
     end    
        
     % group mean & #mice contributing to each voxel
