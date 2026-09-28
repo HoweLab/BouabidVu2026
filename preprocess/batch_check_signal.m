@@ -37,9 +37,16 @@ if ~isfield(mut_k_results,'mut_k_sweep')
 end
 % estimate a k for each channel, separately for + and -
 if ~isfield(mut_k_results,'k_result')
-    [~,mut_k_results.k_result] = mutant_k(mut_k_results.mut_k_sweep,mut_k_results.k_vals,'perc_time_thresh',0.05);
+    [~,mut_k_results.k_result] = mutant_k(mut_k_results.mut_k_sweep,...
+        mut_k_results.k_vals,'perc_time_thresh',0.05);
     save(fullfile(save_dir0,'mut_k_results.mat'),'-struct','mut_k_results')
 end
+% estimate an alpha foro the estimated k for each channel, separately for + and -
+if ~isfield(mut_k_results,'k_result_alpha')
+    [~,mut_k_results.k_result_alpha] = mutant_k_alpha(mut_k_results);
+    save(fullfile(save_dir0,'mut_k_results.mat'),'-struct','mut_k_results')
+end
+
 % all we need is the mad_k
 mad_k.green.pos = mut_k_results.k_result.median(1,1);
 mad_k.green.neg = mut_k_results.k_result.median(1,2);
@@ -50,14 +57,12 @@ clear mut_k_results;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 2. loop over data and check
+sig_check_frac = load_if_exist(fullfile(save_dir0,'sig_check_frac.mat'));
 sig_check_results = load_if_exist(fullfile(save_dir0,'sig_check_results.mat'));
 session_frac_thresh = 0.5; % require a majority of the days to have signal
 for m = 1:numel(all_mice)
     mouse = all_mice{m};
-    mouse_field = mouse;
-    if isstrprop(mouse_field(1),'digit')
-        mouse_field = ['m' mouse_field];
-    end
+    mouse_field = get_mouse_field(mouse);
     
     % channel names
     if ismember(mouse,mice.cohort1)
@@ -78,9 +83,7 @@ for m = 1:numel(all_mice)
         channel_names = {'ACh','DA'};
     end
     
-    if ~isfield(sig_check_results,mouse_field)
-
-
+    if ~isfield(sig_check_frac,mouse_field)
         % experiment directories
         exp_dirs = dir(fullfile(data_dir,mouse));
         is_dirs = [exp_dirs.isdir];
@@ -118,14 +121,20 @@ for m = 1:numel(all_mice)
             disp([mouse ' ' exp_dirs{d}])
         end
 
-        % now see which ones have enough signal        
-        
+        % now see which ones have enough signal                
         frac_sess_ch1 = sum(sig_count.(channel_names{1}),2)/size(sig_count.(channel_names{1}),2);
         frac_sess_ch2 = sum(sig_count.(channel_names{2}),2)/size(sig_count.(channel_names{2}),2);
-        sig_check_results.(mouse_field) = frac_sess_ch1 > session_frac_thresh & frac_sess_ch2 > session_frac_thresh;
+        frac_both = sum(sig_count.(channel_names{1}).*sig_count.(channel_names{2}),2)/size(sig_count.(channel_names{1}),2);
+        sig_check_frac.(mouse_field) = [frac_sess_ch1 frac_sess_ch2 frac_both];
+        save(fullfile(save_dir0,'sig_check_frac.mat'),'-struct','sig_check_frac');
+
     end    
-    save(fullfile(save_dir0,'sig_check_results.mat'),'-struct','sig_check_results');
+    sig_check_results.(mouse_field) = sig_check_frac.(mouse_field)(:,1) >= session_frac_thresh &...
+        sig_check_frac.(mouse_field)(:,2) >= session_frac_thresh;
+    save(fullfile(save_dir0,'sig_check_results_v2.mat'),'-struct','sig_check_results');
+
 end
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% FUNCTIONS
@@ -159,11 +168,82 @@ end
 transients = get_transients(fc,pos_mad_k,neg_mad_k,...
     'mad_clip_thresh',mad_clip_thresh,'mad_max_iter',mad_max_iter,...
     'mad_tol',mad_tol,'tr_n',tr_n);
-tr_perc_time_occ = ...
-    vec(sum(transients.transients.sig>0)/size(transients.transients.sig,1) + ... % pos
-    sum(transients.transients.sig<0)/size(transients.transients.sig,1));
+tr_perc_time_occ = vec(...
+    sum(transients.transients.sig>0)./sum(~isnan(fc)) + ... % pos
+    sum(transients.transients.sig<0)./sum(~isnan(fc))); % neg
 sig_check = [tr_perc_time_occ>tr_occ_alpha tr_perc_time_occ];
 end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% mutant_k_alpha
+% use the mutant mice k sweep results to get a k multiplier
+function [mut_k_alpha,k_result_alpha] = mutant_k_alpha(mut_k_results,varargin)
+
+%%%  parse optional inputs %%%
+ip = inputParser;
+ip.addParameter('channel_names',{'AChMut','DAMut'});
+ip.addParameter('roi_prctile',95);
+ip.addParameter('tr_prc_prctile',95);
+ip.addParameter('n_sample',50);
+ip.addParameter('n_it',1000);
+ip.parse(varargin{:});
+for j=fields(ip.Results)'
+    eval([j{1} '=ip.Results.' j{1} ';']);
+end
+mut_k_alpha = struct;
+k_result_alpha = struct;
+tr_signs = {'pos','neg'};
+
+k_fields = fieldnames(mut_k_results.k_result);
+mice = fieldnames(mut_k_results.mut_k_sweep);
+for f = 1:numel(k_fields)
+    these_k = mut_k_results.k_result.(k_fields{f});
+    for i = 1:2 % rows = channel names
+        for j = 1:2 % cols = pos, neg
+            this_k = these_k(i,j);
+            if rem(this_k,0.5)>0
+                this_k = round(2*this_k)/2;
+            end
+            k_idx = find(mut_k_results.k_vals==this_k);
+            for m = 1:numel(mice)
+                mouse = mice{m};
+                this_tr_prc = permute(mut_k_results.mut_k_sweep.(mouse).(channel_names{i}).([tr_signs{j} '_tr_perc_time'])(k_idx,:,:),[3 2 1]);
+                mut_k_alpha.(k_fields{f}).(mouse).(channel_names{i}).(tr_signs{j}) = ...
+                    vec(prctile(this_tr_prc,tr_prc_prctile));
+            end
+        end
+    end
+end
+
+
+% random sampling w/replacement and bootstrapping 
+n_sample = 50;
+n_it = 1000;
+for f = 1:numel(k_fields)
+    all_k_results.(k_fields{f}) = nan(numel(channel_names),numel(tr_signs),n_it);
+    for i = 1:n_it
+        this_k_result = nan(numel(channel_names),numel(tr_signs),numel(mice)*n_sample);
+        for m = 1:numel(mice)
+            mouse = mice{m};        
+            for c = 1:numel(channel_names)        
+                channel_name = channel_names{c};
+                for s = 1:numel(tr_signs)
+                    tr_sign = tr_signs{s};
+                    tmp = randsample(...
+                        mut_k_alpha.(k_fields{f}).(mouse).(channel_names{c}).(tr_signs{s}),...
+                        n_sample,1);
+                    this_k_result(c,s,(m-1)*n_sample+(1:n_sample)) = tmp;
+                end
+            end
+        end
+        all_k_results.(k_fields{f})(:,:,i) = prctile(this_k_result,roi_prctile,3);
+    end
+end
+k_result_alpha.prctile = prctile(all_k_results.prctile,roi_prctile,3);
+k_result_alpha.median = median(all_k_results.median,3);
+k_result_alpha.mean = mean(all_k_results.mean,3);
+end
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % mutant_k
@@ -174,8 +254,10 @@ function [mut_k,k_result] = mutant_k(k_sweep_results,k_vals,varargin)
 ip = inputParser;
 ip.addParameter('channel_names',{'AChMut','DAMut'});
 ip.addParameter('perc_time_thresh',0.05);
-ip.addParameter('day_prctile',95);
+ip.addParameter('day_prctile',50);
 ip.addParameter('roi_prctile',95);
+ip.addParameter('n_sample',50);
+ip.addParameter('n_it',1000);
 ip.parse(varargin{:});
 for j=fields(ip.Results)'
     eval([j{1} '=ip.Results.' j{1} ';']);
@@ -205,8 +287,6 @@ for m = 1:numel(mice)
 end
 
 % random sampling w/replacement and bootstrapping 
-n_sample = 50;
-n_it = 1000;
 all_k_results = nan(numel(channel_names),numel(tr_signs),n_it);
 for i = 1:n_it
     this_k_result = nan(numel(channel_names),numel(tr_signs),numel(mice)*n_sample);

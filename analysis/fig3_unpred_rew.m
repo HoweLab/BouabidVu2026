@@ -7,7 +7,8 @@ coh_mice.cohort2 = {'AD1','AD2','AD3'};
 coh_mice.cohort5 = {'609','610','813','816','875',}; % ignoring 319
 mice = struct2cell(structfun(@(x) x(:),coh_mice,'UniformOutput',false));
 mice = vertcat(mice{:});
-fib = cohort_fib_table(data_dir,mice);
+% let's use all fibers in striatum for this; can further reduce later
+fib = cohort_fib_table(data_dir,mice,'inclusion_field','in_striatum'); 
 % load corr hotspot
 save_dir1 = fullfile(data_dir,'results','1_cross_corr');
 cc_map_info = load(fullfile(save_dir1,'map_results.mat'),'info','str');
@@ -29,41 +30,29 @@ if isempty(fieldnames(rew_data))
 end
  
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 2. overall cross correlation profile
-rew_cc = load_if_exist(fullfile(save_dir3,'rew_DA_ACh_corr.mat'));
-% trial-by-trial ACh w trial-by-trial DA peak 
-if ~isfield(rew_cc,'overall') || ~isfield(rew_cc.overall,'DA')
-    disp('estimating overall DA peak corr')
-    % correlation of DA peak with ACh 0-500ms after; DA peak has to happen within 1s after rew
-    rew_cc.overall.DA = get_overall_peak_rew_cc(rew_data,'DA',10000,...
-        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',0:18); 
-    save(fullfile(save_dir3,'rew_DA_ACh_corr.mat'),'-struct','rew_cc','-v7.3')
+% 2. estimate cross correlation via repeated random split halfs
+rew_cc_DA = load_if_exist(fullfile(save_dir3,'rew_cc_DA.mat'));
+if sum(~ismember(mice,fieldnames(rew_cc_DA)))>0
+    disp('estimating repeated half-split DA peak corr')
+    rew_cc_DA = get_rep_split_peak_rew_cc(rew_data,'DA',5000,...
+        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',0:18,'do_null',1,...
+        'save_after_each_mouse',fullfile(save_dir3,'rew_cc_DA.mat')); 
+    save(fullfile(save_dir3,'rew_cc_DA.mat'),'-struct','rew_cc_DA','-v7.3')
 end
 % trial-by-trial DA w trial-by-trial ACh peak 
-if ~isfield(rew_cc,'overall') || ~isfield(rew_cc.overall,'ACh')       
-    disp('estimating overall ACh peak corr')
-    % correlation of ACh peak with DA 0-500ms after; ACh peak has to happen within +/-500ms
-    rew_cc.overall.ACh = get_overall_peak_rew_cc(rew_data,'ACh',10000,...
-        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',-9:9);         
-    save(fullfile(save_dir3,'rew_DA_ACh_corr.mat'),'-struct','rew_cc','-v7.3')    
+rew_cc_ACh = load_if_exist(fullfile(save_dir3,'rew_cc_ACh.mat'));
+if sum(~ismember(mice,fieldnames(rew_cc_ACh)))>0  
+    disp('estimating repeated half-split ACh peak corr')
+    rew_cc.rep_split.ACh = get_rep_split_peak_rew_cc(rew_data,'ACh',5000,...
+        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',-9:9,'do_null',1,...
+        'save_after_each_mouse',fullfile(save_dir3,'rew_cc_ACh.mat'));        
+    save(fullfile(save_dir3,'rew_cc_ACh.mat'),'-struct','rew_cc_ACh','-v7.3')    
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 3. robust estimation of correlation magnitudes and lags via repeated
-% random half splits
-if ~isfield(rew_cc,'rep_split') || ~isfield(rew_cc.rep_split,'DA')
-    disp('estimating repeated half-split DA peak corr')
-    rew_cc.rep_split.DA = get_rep_split_peak_rew_cc(rew_data,'DA',1000,...
-        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',0:18); 
-    save(fullfile(save_dir3,'rew_DA_ACh_corr.mat'),'-struct','rew_cc','-v7.3')
-end
-% trial-by-trial DA w trial-by-trial ACh peak 
-if ~isfield(rew_cc,'rep_split') || ~isfield(rew_cc.rep_split,'ACh')    
-    disp('estimating repeated half-split ACh peak corr')
-    rew_cc.rep_split.ACh = get_rep_split_peak_rew_cc(rew_data,'ACh',1000,...
-        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',-9:9);       
-    save(fullfile(save_dir3,'rew_DA_ACh_corr.mat'),'-struct','rew_cc','-v7.3')    
-end
+% 3. compile data
+rew_cc_results = load_if_exist(fullfile(save_dir3,'rew_cc_results.mat'));
+
 
 % 
 % 
@@ -284,67 +273,170 @@ function results = get_rep_split_peak_rew_cc(rew_data,ref_channel,rep_it,varargi
     ip.addParameter('loc_tr_window',9);         % window of data to look for event in channel_1; this might be a bit reduncant with corr_idx
     ip.addParameter('event_polarity',1);        % peak(1) or trough(-1) channel_1 event
     ip.addParameter('update_n',100);            % how often to update via display
+    ip.addParameter('do_null',1 );              % also do a null shuffle
+    ip.addParameter('save_after_each_mouse',[]);% if a path is supplied, will save output after each mouse
     ip.parse(varargin{:});
     for j=fields(ip.Results)'
         eval([j{1} '=ip.Results.' j{1} ';']);
     end
     
-    % loop
+    % setup
+    results = load_if_exist(save_after_each_mouse);
     mice = fieldnames(rew_data);
     ch1 = ref_channel;
     ch2 = setdiff(fieldnames(rew_data.(mice{1})),ch1); 
     ch2 = ch2{1};
         
+    % loop
     for m = 1:numel(mice)
         mouse = mice{m};         
-        disp(['   ' mouse])
+        disp(['   ' mouse])     
         ch1_act = rew_data.(mouse).(ch1).activity;
         ch2_act = rew_data.(mouse).(ch2).activity;
         
-        
-        ch1_act = rew_data.(mouse).(ch1).activity;
-        ch2_act = rew_data.(mouse).(ch2).activity;
-        results.(mouse).lag_idx = nan(rep_it,size(ch1_act,2));
-        results.(mouse).r = nan(rep_it,size(ch1_act,2));
-        for i = 1:rep_it
-            
-            if rem(i,update_n) == 0
-                disp(['     ' num2str(i)])
+        if ~isfield(results, mouse)            
+            % initialize
+            results.(mouse).lag_idx.AB = nan(rep_it,size(ch1_act,2));
+            results.(mouse).r.AB = nan(rep_it,size(ch1_act,2));
+            results.(mouse).lag_idx.BA = nan(rep_it,size(ch1_act,2));
+            results.(mouse).r.BA = nan(rep_it,size(ch1_act,2));
+            if do_null == 1            
+                results.(mouse).null.lag_idx.AB = nan(rep_it,size(ch1_act,2));
+                results.(mouse).null.r.AB = nan(rep_it,size(ch1_act,2));
+                results.(mouse).null.max_abs_r.A = nan(rep_it,size(ch1_act,2));
+                results.(mouse).null.lag_idx.BA = nan(rep_it,size(ch1_act,2));
+                results.(mouse).null.r.BA = nan(rep_it,size(ch1_act,2));
+                results.(mouse).null.max_abs_r.B = nan(rep_it,size(ch1_act,2));
             end
+            i_start = 1;
             
-            % random half-splits: 
-            % split 1 estimates the lag, split 2 estimates the magnitude
-            rand_idx = randperm(size(ch1_act,3));
-            split_i = floor(size(ch1_act,3)/2);
-            split1 = rand_idx(1:split_i);
-            split2 = rand_idx((split_i+1):numel(rand_idx));
-            ch1_split1 = ch1_act(:,:,split1);
-            ch1_split2 = ch1_act(:,:,split2);
-            ch2_split1 = ch2_act(:,:,split1);
-            ch2_split2 = ch2_act(:,:,split2);
-                        
-            % estimate best lag from split 1            
-            mouse_corr = raster_transient_correlation(ch1_split1,ch2_split1,event_polarity,...
-                'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
-                'corr_idx_of_int',corr_idx,'local_transient_window',loc_tr_window);      
-            
-            % get lag of strongest corr
-            [~,best_lag] = max(abs(mouse_corr.corr.corr_r));
-            [~,best_lag_idx] = max(abs(mouse_corr.corr.corr_r),[],'linear');
-            
-            % now estimate the corr in split2 of that lag
-            mouse_corr = raster_transient_correlation(ch1_split2,ch2_split2,event_polarity,...
-                'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
-                'corr_idx_of_int',corr_idx,'local_transient_window',loc_tr_window);   
-            corr_at_best_lag = mouse_corr.corr.corr_r(best_lag_idx);
-            
-            % add to results
-            results.(mouse).lag_idx(i,:) = best_lag;
-            results.(mouse).r(i,:) = corr_at_best_lag;
+        elseif size(results.(mouse).lag_idx.AB,1) < rep_it
+            i_done = size(results.(mouse).lag_idx.AB,1);
+            i_start = i_done+1;
+            % initialize
+            results.(mouse).lag_idx.AB = [results.(mouse).lag_idx.AB;...
+                nan(rep_it-i_done,size(ch1_act,2))];
+            results.(mouse).r.AB = [results.(mouse).r.AB;...
+                nan(rep_it-i_done,size(ch1_act,2))];
+            results.(mouse).lag_idx.BA = [results.(mouse).lag_idx.BA;...
+                nan(rep_it-i_done,size(ch1_act,2))];
+            results.(mouse).r.BA = [results.(mouse).r.BA;...
+                nan(rep_it-i_done,size(ch1_act,2))];
+            if do_null == 1            
+                results.(mouse).null.lag_idx.AB = ...
+                    [results.(mouse).null.lag_idx.AB;...
+                    nan(rep_it-i_done,size(ch1_act,2))];
+                results.(mouse).null.r.AB = ...
+                    [results.(mouse).null.r.AB;...
+                    nan(rep_it-i_done,size(ch1_act,2))];
+                results.(mouse).null.max_abs_r.A = ...
+                    [results.(mouse).null.max_abs_r.A;...
+                    nan(rep_it-i_done,size(ch1_act,2))];
+                results.(mouse).null.lag_idx.BA = ...
+                    [results.(mouse).null.lag_idx.BA;...
+                    nan(rep_it-i_done,size(ch1_act,2))];
+                results.(mouse).null.r.BA = ...
+                    [results.(mouse).null.r.BA;...
+                    nan(rep_it-i_done,size(ch1_act,2))];
+                results.(mouse).null.max_abs_r.B = ...
+                    [results.(mouse).null.max_abs_r.B;...
+                    nan(rep_it-i_done,size(ch1_act,2))];
+            end
+        else
+            i_start = rep_it;
         end
-                   
+        if i_start<rep_it
+
+            for i = i_start:rep_it
+
+                if rem(i,update_n) == 0
+                    disp(['     ' num2str(i)])
+                end
+
+                % random half-splits: 
+                % split 1 estimates the lag, split 2 estimates the magnitude
+                rand_idx = randperm(size(ch1_act,3));
+                split_i = floor(size(ch1_act,3)/2);
+                % first half
+                splitA = rand_idx(1:split_i);            
+                ch1_splitA = ch1_act(:,:,splitA);
+                ch2_splitA = ch2_act(:,:,splitA);
+
+
+                % second half
+                splitB = rand_idx((split_i+1):numel(rand_idx));            
+                ch1_splitB = ch1_act(:,:,splitB);            
+                ch2_splitB = ch2_act(:,:,splitB);
+
+                % split 1
+                mouse_corrA = raster_transient_correlation(ch1_splitA,ch2_splitA,event_polarity,...
+                    'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
+                    'corr_idx_of_int',corr_idx,'local_transient_window',loc_tr_window);      
+
+                % split 2
+                mouse_corrB = raster_transient_correlation(ch1_splitB,ch2_splitB,event_polarity,...
+                    'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
+                    'corr_idx_of_int',corr_idx,'local_transient_window',loc_tr_window);   
+
+                % get lag of strongest corr from A, corr strength at that lag from B
+                [~,best_lagA] = max(abs(mouse_corrA.corr.corr_r));
+                [~,best_lagA_idx] = max(abs(mouse_corrA.corr.corr_r),[],'linear');
+                corrB_at_best_lagA = mouse_corrB.corr.corr_r(best_lagA_idx);
+
+                % get lag of strongest corr from B, corr strength at that lag from A
+                [~,best_lagB] = max(abs(mouse_corrB.corr.corr_r));
+                [~,best_lagB_idx] = max(abs(mouse_corrB.corr.corr_r),[],'linear');
+                corrA_at_best_lagB = mouse_corrA.corr.corr_r(best_lagB_idx);
+
+                % add to results
+                results.(mouse).lag_idx.AB(i,:) = best_lagA;
+                results.(mouse).lag_idx.BA(i,:) = best_lagB;
+                results.(mouse).r.AB(i,:) = corrB_at_best_lagA;
+                results.(mouse).r.BA(i,:) = corrA_at_best_lagB;
+
+                % if we're doing a null distribution too
+                if do_null == 1
+
+                    splitA_shuffle = splitA(randperm(numel(splitA)));
+                    ch2_splitA_sh = ch2_act(:,:,splitA_shuffle);
+                    splitB_shuffle = splitB(randperm(numel(splitB)));
+                    ch2_splitB_sh = ch2_act(:,:,splitB_shuffle);
+
+                    mouse_corrAsh = raster_transient_correlation(ch1_splitA,ch2_splitA_sh,event_polarity,...
+                        'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
+                        'corr_idx_of_int',corr_idx,'local_transient_window',loc_tr_window);    
+
+                    mouse_corrBsh = raster_transient_correlation(ch1_splitB,ch2_splitB_sh,event_polarity,...
+                        'input_idx',eta_idx,'ref_idx_of_int',ref_idx_of_int,...
+                        'corr_idx_of_int',corr_idx,'local_transient_window',loc_tr_window);                   
+
+                    % get lag of strongest corr from A, corr strength at that lag from B
+                    [max_rA,best_lagA] = max(abs(mouse_corrAsh.corr.corr_r));
+                    [~,best_lagA_idx] = max(abs(mouse_corrAsh.corr.corr_r),[],'linear');
+                    corrB_at_best_lagA = mouse_corrBsh.corr.corr_r(best_lagA_idx);
+
+                    % get lag of strongest corr from B, corr strength at that lag from A
+                    [max_rB ,best_lagB] = max(abs(mouse_corrBsh.corr.corr_r));
+                    [~,best_lagB_idx] = max(abs(mouse_corrBsh.corr.corr_r),[],'linear');
+                    corrA_at_best_lagB = mouse_corrAsh.corr.corr_r(best_lagB_idx);
+
+                    % add to results
+                    results.(mouse).null.lag_idx.AB(i,:) = best_lagA;
+                    results.(mouse).null.lag_idx.BA(i,:) = best_lagB;
+                    results.(mouse).null.r.AB(i,:) = corrB_at_best_lagA;
+                    results.(mouse).null.r.BA(i,:) = corrA_at_best_lagB;
+                    results.(mouse).null.max_abs_r.A(i,:) = max_rA;
+                    results.(mouse).null.max_abs_r.B(i,:) = max_rB;
+                end            
+            end
+
+            if ~isempty(save_after_each_mouse)
+                save(save_after_each_mouse,'-struct','results','-v7.3')
+            end
+        end
     end
 end
+
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
