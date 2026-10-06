@@ -174,7 +174,7 @@ if includeColorbar == 1
     tickLabels = round(linspace(cmapping(1),cmapping(end),colorbarTickDec),3);
     set(cb,'Ticks',ticks,'TickLabels',tickLabels,'FontSize',fontSize,'Location',colorbarLoc)
     if ~isempty(colorbarLabel)
-        ylabel(cb,colorbarLabel,'Rotation',270)
+        ylabel(cb,colorbarLabel,'Rotation',270,'FontSize',fontSize)
     end
 end
 

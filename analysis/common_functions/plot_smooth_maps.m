@@ -13,8 +13,12 @@ function plot_smooth_maps(this_map,str,varargin)
     ip = inputParser;
     % directories and atlas: see https://github.com/HoweLab/MultifiberLocalization    
     ip.addParameter('outlines',[]); % outlines to plot (see get_mask_projection_outlines)
-    ip.addParameter('cmap_bounds',[]);   
-    ip.addParameter('cmap_option','redblue');   
+    ip.addParameter('cmap_bounds',[]);
+    ip.addParameter('cmap_levels',[]);
+    ip.addParameter('colorbar_label',[]);
+    ip.addParameter('font_size',16);   
+    ip.addParameter('cmap_option','redblue');
+    ip.addParameter('str_fill',[1 1 .9]);
     ip.parse(varargin{:});
     for j=fields(ip.Results)'
         eval([j{1} '=ip.Results.' j{1} ';']);
@@ -29,7 +33,11 @@ function plot_smooth_maps(this_map,str,varargin)
     if isempty(cmap_bounds)
         cmap_bounds = [-1 1]*prctile(abs(axial_vol(:)),99.5);
     end
-        
+    if ~isempty(cmap_levels)
+        eval(['cmap = ' cmap_option '(' num2str(cmap_levels) ');'])
+    else
+        eval(['cmap = ' cmap_option '(256);'])
+    end
     % get outlines of axial and sagittal mask projections and add to the 
     % top of the list of outlines to plot
     if isempty(outlines)
@@ -50,24 +58,37 @@ function plot_smooth_maps(this_map,str,varargin)
     
     %%% axial
     subplot(2,1,1)
+    if ~isempty(str_fill)
+        fill(str_outlines.axial{1},str_outlines.axial{2},str_fill)
+    end
+    hold on
     hi = imagesc(axial_vol,'XData',str.info.ML,'YData',str.info.AP);
     set(hi, 'AlphaData', ~isnan(axial_vol))
-    hold on
     % plot contours (will be black - can change later in illustrator)
     for v = 1:size(outlines.axial,1)
         plot(outlines.axial{v,1},outlines.axial{v,2},'-k') 
     end
     caxis(cmap_bounds)
-    colormap(cmap_option)
-    set(gca,'XDir','Normal','YDir','normal')
+    colormap(cmap)
+    set(gca,'XDir','Normal','YDir','normal','FontSize',font_size)
     xlabel('Medial \leftrightarrow Lateral')
     ylabel('Posterior \leftrightarrow Anterior')
     axis equal
-    colorbar
+    cb = colorbar;
+    cb.TickLabels(2:end-1) = {''};
+    if ~isempty(colorbar_label)
+        cb.Label.FontSize = font_size;
+        cb.Label.String = colorbar_label;
+        cb.Label.Rotation = 270;
+    end        
 
 
     %%% sagittal
     subplot(2,1,2)
+    if ~isempty(str_fill)
+        fill(str_outlines.sagittal{1},str_outlines.sagittal{2},str_fill)
+    end
+    hold on
     hi = imagesc(sagittal_vol,'XData',str.info.AP,'YData',str.info.DV);
     set(hi, 'AlphaData', ~isnan(sagittal_vol))
     hold on
@@ -76,8 +97,8 @@ function plot_smooth_maps(this_map,str,varargin)
         plot(outlines.sagittal{v,1},outlines.sagittal{v,2},'-k') 
     end
     caxis(cmap_bounds)
-    colormap(cmap_option)
-    set(gca,'XDir','reverse','YDir','normal') % for whatever reason, I like anterior on the left
+    colormap(cmap)
+    set(gca,'XDir','reverse','YDir','normal','FontSize',font_size) % for whatever reason, I like anterior on the left
     xlabel('Anterior \leftrightarrow Posterior')
     ylabel('Ventral \leftrightarrow Dorsal')
     axis equal  

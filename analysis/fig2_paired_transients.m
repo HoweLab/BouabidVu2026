@@ -30,37 +30,85 @@ mad_multiplier = rmfield(mad_multiplier,{'green','red'});
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 1. get transient info pairing info for all recording locations
-paired_tr = get_all_pairing_stats(fib,data_dir,mad_multiplier,...
-    'Fc_field','Fc','channel_names',{'ACh','DA'},'Fc_artifact_mask','artifact_mask',...
-    'save_dir',save_dir2);
-save(fullfile(save_dir2,'tr_pairing_results.mat'),'-struct','paired_tr')
+% 1. get single transient rate (average across sessions)
+tr_stats = load_if_exist(fullfile(save_dir2,'transient_stats.mat'));
+if isempty(fieldnames(tr_stats))
+    tr_stats = get_transient_stats(fib,data_dir,mad_multiplier,...
+        'Fc_field','Fc','channel_names',{'ACh','DA'},'Fc_artifact_mask','artifact_mask',...
+        'save_dir',save_dir2);
+    save(fullfile(save_dir2,'transient_stats.mat'),'-struct','tr_stats')
+end
+
+% 2. get transient info pairing info for all recording locations
+paired_tr = load_if_exist(fullfile(save_dir2,'transient_pairing_results.mat'));
+if isempty(fieldnames(paired_tr))
+    paired_tr = get_all_pairing_stats(fib,data_dir,mad_multiplier,...
+        'Fc_field','Fc','channel_names',{'ACh','DA'},'Fc_artifact_mask','artifact_mask',...
+        'save_dir',save_dir2,'null_it',1000);
+    save(fullfile(save_dir2,'transient_pairing_results.mat'),'-struct','paired_tr')
+end
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 2. maps
-
 % size & striatum mask
-map_results = load(fullfile(save_dir1,'map_results'),'str','info');
+map_results = load_if_exist(fullfile(save_dir2,'map_results.mat'));
+if ~isfield(map_results,'str')
+    tmp = load(fullfile(save_dir1,'map_results'),'str','info');
+    map_results.str = tmp.str;
+    map_results.info = tmp.info;
+    clear tmp;
+end
+if ~isfield(map_results,'vals')
+    map_results.vals = struct;
+end
+
+% single stats
+trs = fieldnames(tr_stats);
+fields_of_int = {'freq','mag'};
+for t = 1:numel(trs)
+    tr = trs{t};
+    for f = 1:numel(fields_of_int)
+        field_of_int = fields_of_int{f};
+        if ~isfield(map_results.vals,field_of_int)
+            % vals
+            disp([tr ' ' field_of_int])
+            map_results.vals.(tr).(field_of_int) = tr_stats.(tr).(field_of_int);
+            % interp
+            tmp = get_activity_map_interp(tr_stats.(tr).(field_of_int),fib, map_results.str.info.voxel_size,...
+                'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+                'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+                'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],'incl_plot_info',1);
+            map_results.interp.vol.(tr).(field_of_int) = tmp.vol_01.interp;	% interpolated volume (z)
+            map_results.interp.n.(tr) = tmp.vol_01.n_mice;   % #mice contrib to each voxel; only need once per
+            map_results.interp.F.(tr) = tmp.vol_01.interp_F; % interpolant function; only need once per 
+        end
+    end
+end
+
+% pairing
 evs = fieldnames(paired_tr);
-fields_of_int = {'lat_mad','lat_mode','sufficiency','necessity'};
-map_results.vals = struct;
-map_results.interp = struct;
+fields_of_int = {'lat_mad','lat_mode',...
+    'sufficiency','necessity',...
+    'sufficiency_corrected','necessity_corrected'};
 for e = 1:numel(evs)
     ev = evs{e};
     for f = 1:numel(fields_of_int)
         field_of_int = fields_of_int{f};
-        % vals
-        map_results.vals.(ev).(field_of_int) = paired_tr.(ev).(field_of_int);
-        % interp
-        tmp = get_activity_map_interp(paired_tr.(ev).(field_of_int),fib, map_results.str.info.voxel_size,...
-            'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
-            'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
-            'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],'incl_plot_info',1);
-        map_results.interp.vol.(ev).(field_of_int) = tmp.vol_01.interp;	% interpolated volume (z)
+        if ~isfield(map_results.vals,field_of_int)
+            % vals
+            disp([ev ' ' field_of_int])
+            map_results.vals.(ev).(field_of_int) = paired_tr.(ev).(field_of_int);
+            % interp
+            tmp = get_activity_map_interp(paired_tr.(ev).(field_of_int),fib, map_results.str.info.voxel_size,...
+                'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+                'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+                'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],'incl_plot_info',1);
+            map_results.interp.vol.(ev).(field_of_int) = tmp.vol_01.interp;	% interpolated volume (z)
+            map_results.interp.n.(ev) = tmp.vol_01.n_mice;   % #mice contrib to each voxel; only need once per ev
+            map_results.interp.F.(ev) = tmp.vol_01.interp_F; % interpolant function; only need once per ev
+        end
     end
-    map_results.interp.n.(ev) = tmp.vol_01.n_mice;   % #mice contrib to each voxel; only need once per ev
-    map_results.interp.F.(ev) = tmp.vol_01.interp_F; % interpolant function; only need once per ev
 end
 map_results.info = tmp.info;    
 save(fullfile(save_dir2,'map_results.mat'),'-struct','map_results','-v7.3')
@@ -173,6 +221,89 @@ xlabel('Directionality Index')
 ylabel('%')
 end
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% get_transient_stats (across mice)
+function output = get_transient_stats(fib,data_dir,mad_multiplier,varargin)
+ip = inputParser;
+ip.addParameter('channel_names',{'ACh','DA'});  % channel names
+ip.addParameter('Fc_field','Fc');               % which DF/F field to use
+ip.addParameter('Fc_artifact_mask',[]);         % the field which contains the artifact mask; leave blank if N/A
+ip.addParameter('sr',18);                       % if supplied, will save interim steps
+ip.addParameter('save_dir',[]);                 % if supplied, will save interim steps
+ip.parse(varargin{:});
+for j=fields(ip.Results)'
+    eval([j{1} '=ip.Results.' j{1} ';']);
+end
+mice = unique(fib.mouse);
+signs = {'pos','neg'};
+
+% initialize
+output = struct;
+for c = 1:numel(channel_names)
+    channel_name = channel_names{c};
+    for s = 1:numel(signs)
+        output.([channel_name '_' signs{s}]).freq = zeros(size(fib,1),1);
+        output.([channel_name '_' signs{s}]).mag = zeros(size(fib,1),1);
+    end
+end
+
+% loop
+for m = 1:numel(mice)
+    mouse = mice{m};
+    mouse_field = get_mouse_field(mouse);
+    str_rois = fib.ROI_orig(strcmp(fib.mouse,mouse));
+    if ~isempty(save_dir)            
+        % transients
+        mouse_transients = load_if_exist(fullfile(save_dir,[mouse '_transients.mat']));
+        if isempty(fieldnames(mouse_transients))
+            disp('   getting transients')
+            mouse_transients = concat_transients(mouse,str_rois,data_dir,mad_multiplier, ...
+                'Fc_field',Fc_field,'channel_names',channel_names,'Fc_artifact_mask',Fc_artifact_mask,...
+                'save_dir',save_dir);
+        end
+        % get n timepoints and transients for each date
+        all_dates = struct2cell(structfun(@(x) unique([...
+            x.(channel_names{1}).pos.exp_dir;...
+            x.(channel_names{1}).neg.exp_dir;...
+            x.(channel_names{2}).pos.exp_dir;...
+            x.(channel_names{2}).neg.exp_dir]),...
+            mouse_transients,'UniformOutput',false));
+        all_dates = unique(vertcat(all_dates{:}));
+        all_n = nan(numel(all_dates),1);
+        for d = 1:numel(all_dates)
+            exp_dir = all_dates{d};
+            tp = load(fullfile(data_dir,mouse,exp_dir,[mouse '_' exp_dir '.mat']),[channel_names{1} '_idx']);
+            all_n(d) = diff(tp.([channel_names{1} '_idx']))+1;
+        end
+        roi_fields = fieldnames(mouse_transients);
+        for r = 1:numel(roi_fields)
+            roi_field = roi_fields{r};
+            roi_idx = strcmp(fib.mouse,mouse) & fib.ROI_orig==str2double(roi_field(4:end));
+            for c = 1:numel(channel_names)
+                channel_name = channel_names{c};
+                for s = 1:numel(signs)
+                    tr_sign = signs{s};
+                    these_tr = mouse_transients.(roi_field).(channel_name).(tr_sign);
+                    if ~isempty(these_tr.exp_dir)
+                        tr_exp_dirs = unique(these_tr.exp_dir);
+                        exp_n = zeros(numel(tr_exp_dirs),2);
+                        exp_mag = zeros(numel(tr_exp_dirs),1);
+                        for d = 1:numel(tr_exp_dirs)
+                            tr_exp_dir = tr_exp_dirs{d};
+                            exp_n(d,1) = sum(ismember(these_tr.exp_dir,tr_exp_dir));
+                            exp_n(d,2) = all_n(strcmp(all_dates,tr_exp_dir));
+                            exp_mag(d) = mean(these_tr.tr_magnitude(ismember(these_tr.exp_dir,tr_exp_dir)));
+                        end
+                        exp_pr = mean(exp_n(:,1)./exp_n(:,2))*sr;
+                        output.([channel_name '_' signs{s}]).freq(roi_idx) = exp_pr;
+                        output.([channel_name '_' signs{s}]).mag(roi_idx) = mean(exp_mag);
+                    end
+                end
+            end
+        end
+    end
+end
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % get_all_pairing_stats (across mice)
@@ -183,7 +314,7 @@ ip.addParameter('channel_names',{'ACh','DA'});  % which DF/F field to use
 ip.addParameter('Fc_field','Fc');               % which DF/F field to use
 ip.addParameter('Fc_artifact_mask',[]);         % the field which contains the artifact mask; leave blank if N/A
 ip.addParameter('save_dir',[]);                 % if supplied, will save interim steps
-
+ip.addParameter('null_it',[]);                  % if > 0 will calculate null distribution for pairing stats
 ip.parse(varargin{:});
 for j=fields(ip.Results)'
     eval([j{1} '=ip.Results.' j{1} ';']);
@@ -206,6 +337,15 @@ for c = 1:numel(channel_names)
             output.(ev).lat_mode = nan(size(fib,1),1);
             output.(ev).sufficiency = nan(size(fib,1),1);
             output.(ev).necessity = nan(size(fib,1),1);
+            if null_it > 0
+                output.(ev).lat_mad_p = nan(size(fib,1),1);
+                output.(ev).sufficiency_pR = nan(size(fib,1),1);
+                output.(ev).sufficiency_pL = nan(size(fib,1),1);
+                output.(ev).sufficiency_corrected = nan(size(fib,1),1);
+                output.(ev).necessity_pR = nan(size(fib,1),1);
+                output.(ev).necessity_pL = nan(size(fib,1),1);
+                output.(ev).necessity_corrected = nan(size(fib,1),1);
+            end
         end
     end
 end   
@@ -243,9 +383,7 @@ for m = 1:numel(mice)
             % pairing stats
             disp('   getting transient pairing stats')
             mouse_pairing_stats = get_pairing_stats(mouse_transients,mouse_paired_transients,...
-                'save_path',fullfile(save_dir,[mouse '_transient_pairing_stats.mat']));
-           
-
+                'save_path',fullfile(save_dir,[mouse '_transient_pairing_stats.mat']));            
         else
             disp('   getting transients')
             mouse_transients = concat_transients(mouse,str_rois,data_dir,mad_multiplier, ...
@@ -256,7 +394,24 @@ for m = 1:numel(mice)
             mouse_pairing_stats = get_pairing_stats(mouse_transients,mouse_paired_transients);       
             
         end        
-    end  
+    end
+    % if we have null distribution data
+    if null_it > 0
+        % null transient pairing
+        mouse_null_paired_transients = load_if_exist(fullfile(save_dir,[mouse '_transients_paired_null.mat']));
+        if isempty(fieldnames(mouse_null_paired_transients))
+            disp('   getting null transient pairs')
+            mouse_null_paired_transients = get_null_transient_pairs(mouse_transients,null_it,...
+                'save_path',fullfile(save_dir,[mouse '_transients_paired_null.mat']));
+        end
+        % null pairing stats
+        mouse_null_pairing_stats = load_if_exist(fullfile(save_dir,[mouse '_transient_null_pairing_stats.mat']));
+        if isempty(fieldnames(mouse_null_pairing_stats))
+            disp('   getting null transient pairing stats')
+            mouse_null_pairing_stats = get_null_pairing_stats(mouse_transients,mouse_null_paired_transients,...
+                'save_path',fullfile(save_dir,[mouse '_transient_null_pairing_stats.mat']));
+        end
+    end
     mouse_idx = find(strcmp(fib.mouse,mouse));
     mouse_rois = fib.ROI_orig(mouse_idx);
     for r = 1:numel(mouse_rois)
@@ -270,6 +425,34 @@ for m = 1:numel(mice)
                 output.(ev).lat_mode(roi_idx) = mouse_pairing_stats.(ev).(roi_field).lat_mode;
                 output.(ev).sufficiency(roi_idx) = mouse_pairing_stats.(ev).(roi_field).prob(1);
                 output.(ev).necessity(roi_idx) = mouse_pairing_stats.(ev).(roi_field).prob(2);
+                if null_it > 0
+                    output.(ev).lat_mad_p(roi_idx) = sum(...
+                        mouse_null_pairing_stats.(ev).(roi_field).lat_mad < ...
+                        output.(ev).lat_mad(roi_idx)) / ...
+                        numel(mouse_null_pairing_stats.(ev).(roi_field).lat_mad);
+                    output.(ev).sufficiency_pR(roi_idx) = sum(...
+                        mouse_null_pairing_stats.(ev).(roi_field).prob(:,1) > ...
+                        output.(ev).sufficiency(roi_idx)) /...
+                        size(mouse_null_pairing_stats.(ev).(roi_field).prob,1);
+                    output.(ev).sufficiency_pL(roi_idx) = sum(...
+                        mouse_null_pairing_stats.(ev).(roi_field).prob(:,1) < ...
+                        output.(ev).sufficiency(roi_idx)) /...
+                        size(mouse_null_pairing_stats.(ev).(roi_field).prob,1);
+                    output.(ev).sufficiency_corrected(roi_idx) = ...
+                        output.(ev).sufficiency(roi_idx) - ...
+                        mean(mouse_null_pairing_stats.(ev).(roi_field).prob(:,1));
+                    output.(ev).necessity_pR(roi_idx) = sum(...
+                        mouse_null_pairing_stats.(ev).(roi_field).prob(:,2) > ...
+                        output.(ev).necessity(roi_idx)) /...
+                        size(mouse_null_pairing_stats.(ev).(roi_field).prob,1);
+                    output.(ev).necessity_pL(roi_idx) = sum(...
+                        mouse_null_pairing_stats.(ev).(roi_field).prob(:,2) < ...
+                        output.(ev).necessity(roi_idx)) /...
+                        size(mouse_null_pairing_stats.(ev).(roi_field).prob,1);
+                    output.(ev).necessity_corrected(roi_idx) = ...
+                        output.(ev).necessity(roi_idx) - ...
+                        mean(mouse_null_pairing_stats.(ev).(roi_field).prob(:,2));
+                end
             end
         end
     end     
@@ -385,121 +568,6 @@ if ~isempty(save_dir)
 end
 end
 
-% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% % get_pairing_stats
-% function output = get_pairing_stats(mouse_transients,mouse_paired_transients,varargin)
-% 
-% %%%  parse optional inputs %%%
-% ip = inputParser;
-% ip.addParameter('channel_names',{'ACh','DA'});  % which DF/F field to use
-% ip.addParameter('rew_ignore',6);                % ignore transients within 6s of rew deliv or consump
-% ip.addParameter('save_path',[]);                % if supplied, will save pairing stats
-% 
-% ip.parse(varargin{:});
-% for j=fields(ip.Results)'
-%     eval([j{1} '=ip.Results.' j{1} ';']);
-% end
-% 
-% % setup
-% roi_fields = fieldnames(mouse_transients); 
-% signs = {'pos','neg'};
-%     
-% % initialize
-% output = struct;
-% for s1 = 1:numel(signs)
-%     for s2 = 1:numel(signs)
-%         field_str = [channel_names{1} '_' signs{s1} '_' channel_names{2} '_' signs{s2}];        
-%         output.(field_str).([channel_names{1} '_paired']) = nan(numel(roi_fields),1);
-%         output.(field_str).([channel_names{1} '_unpaired']) = nan(numel(roi_fields),1);
-%         output.(field_str).([channel_names{2} '_paired']) = nan(numel(roi_fields),1);
-%         output.(field_str).([channel_names{2} '_unpaired']) = nan(numel(roi_fields),1);
-%         output.(field_str).dir_n = nan(numel(roi_fields),2); % ACh-leading, DA-leading  
-%         output.(field_str).dir_index = nan(numel(roi_fields),1);
-%         output.(field_str).mag_corr_r = nan(numel(roi_fields),2); % ACh-leading, DA-leading        
-%         output.(field_str).mag_corr_p = nan(numel(roi_fields),2); % ACh-leading, DA-leading        
-%         output.(field_str).peak_lat_mean = nan(numel(roi_fields),2); % latency between peaks
-%         output.(field_str).peak_lat_std = nan(numel(roi_fields),2); % latency between peaks
-%     end
-% end
-% 
-% evs = fieldnames(output); % paired transient events: note, neuromod order doesn't matter here
-% % loop over pairs
-% for e = 1:numel(evs)
-%     ev_info = strsplit(evs{e},'_');
-%     ev1 = [ev_info{1} '_' ev_info{2}]; % ACh transient
-%     ev2 = [ev_info{3} '_' ev_info{4}]; % DA transient
-%     % loop over ROIs
-%     for r = 1:numel(roi_fields)
-%         fib_idx = r;
-%         filt_ch1 = ~(mouse_transients.(roi_fields{r}).(ev_info{1}).(ev_info{2}).last_rew_del <= rew_ignore | ...
-%             mouse_transients.(roi_fields{r}).(ev_info{1}).(ev_info{2}).last_rew_con <= rew_ignore);       
-%         filt_ch2 = ~(mouse_transients.(roi_fields{r}).(ev_info{3}).(ev_info{4}).last_rew_del <= rew_ignore | ...
-%             mouse_transients.(roi_fields{r}).(ev_info{3}).(ev_info{4}).last_rew_con <= rew_ignore);
-%         % paired transients
-%         ch1_first = mouse_paired_transients.([ev1 '_' ev2]).(roi_fields{r});            
-%         ch2_first = fliplr(mouse_paired_transients.([ev2 '_' ev1]).(roi_fields{r})); % flip to match order: ACh col 1
-%         % eligible pairs
-%         if ~isempty(ch1_first)
-%             ch1_first = ch1_first(filt_ch1(ch1_first(:,1))==1 & filt_ch2(ch1_first(:,2))==1,:);
-%         end
-%         if ~isempty(ch2_first)
-%             ch2_first = ch2_first(filt_ch1(ch2_first(:,1))==1 & filt_ch2(ch2_first(:,2))==1,:);
-%         end
-%         % eligible pairs            
-%         paired_transients = [ch1_first; ch2_first];
-%         if size(paired_transients,1) > 2
-%             output.(evs{e}).ACh_paired(fib_idx) = numel(unique(paired_transients(:,1)));
-%             output.(evs{e}).DA_paired(fib_idx) = numel(unique(paired_transients(:,2)));
-%             output.(evs{e}).ACh_unpaired(fib_idx) = sum(filt_ch1)-numel(unique(paired_transients(:,1)));
-%             output.(evs{e}).DA_unpaired(fib_idx) = sum(filt_ch2)-numel(unique(paired_transients(:,2)));           
-%             % directionality index
-%             output.(evs{e}).dir_n(fib_idx,:) = [size(ch1_first,1) size(ch2_first,1)];
-%             output.(evs{e}).dir_index(fib_idx) = (size(ch1_first,1)-size(ch2_first,1))/(size(ch1_first,1)+size(ch2_first,1));
-%             % magnitude correlation (Pearson): ACh v DA, 
-%             % ACh-leading pairs
-%             x = mouse_transients.(roi_fields{r}).(ev_info{1}).(ev_info{2}).tr_magnitude(ch1_first(:,1));
-%             y = mouse_transients.(roi_fields{r}).(ev_info{3}).(ev_info{4}).tr_magnitude(ch1_first(:,2));
-%             if ~isempty(x)
-%                 [corr_r,p] = corr(x,y);
-%                 output.(evs{e}).mag_corr_r(fib_idx,1) = corr_r;
-%                 output.(evs{e}).mag_corr_p(fib_idx,1) = p;
-%             end
-%             % DA-leading pairs
-%             x = mouse_transients.(roi_fields{r}).(ev_info{1}).(ev_info{2}).tr_magnitude(ch2_first(:,1));
-%             y = mouse_transients.(roi_fields{r}).(ev_info{3}).(ev_info{4}).tr_magnitude(ch2_first(:,2));
-%             if ~isempty(x)
-%                 [corr_r,p] = corr(x,y);
-%                 output.(evs{e}).mag_corr_r(fib_idx,2) = corr_r;
-%                 output.(evs{e}).mag_corr_p(fib_idx,2) = p;
-%             end
-%             % latency: ACh-leading pairs and then DA-leading pairs
-%             output.(evs{e}).peak_lat_mean(fib_idx,:) = [...
-%                 mean(mouse_transients.(roi_fields{r}).(ev_info{3}).(ev_info{4}).tr_peak(ch1_first(:,2))-...
-%                 mouse_transients.(roi_fields{r}).(ev_info{1}).(ev_info{2}).tr_peak(ch1_first(:,1))),...
-%                 mean(mouse_transients.(roi_fields{r}).(ev_info{1}).(ev_info{2}).tr_peak(ch2_first(:,1))-...
-%                 mouse_transients.(roi_fields{r}).(ev_info{3}).(ev_info{4}).tr_peak(ch2_first(:,2)))];
-%             output.(evs{e}).peak_lat_std(fib_idx,:) = [...
-%                 std(mouse_transients.(roi_fields{r}).(ev_info{3}).(ev_info{4}).tr_peak(ch1_first(:,2))-...
-%                 mouse_transients.(roi_fields{r}).(ev_info{1}).(ev_info{2}).tr_peak(ch1_first(:,1))),...
-%                 std(mouse_transients.(roi_fields{r}).(ev_info{1}).(ev_info{2}).tr_peak(ch2_first(:,1))-...
-%                 mouse_transients.(roi_fields{r}).(ev_info{3}).(ev_info{4}).tr_peak(ch2_first(:,2)))]; 
-%         end
-%     end 
-%     
-%     % occurrence
-%     occ_n = [...
-%         output.(evs{e}).([channel_names{1} '_paired']),... % paired ACh
-%         output.(evs{e}).([channel_names{2} '_paired']),... % paired DA
-%         output.(evs{e}).([channel_names{1} '_paired']) + output.(evs{e}).([channel_names{1} '_unpaired']),... % total ACh        
-%         output.(evs{e}).([channel_names{2} '_paired']) + output.(evs{e}).([channel_names{2} '_unpaired'])]; % total DA
-%     output.(evs{e}).occ = sum(occ_n(:,1:2),2)./sum(occ_n(:,3:4),2); % occurrence rate: (# transients in pairs) / (total # transients)
-%     
-% end
-% if ~isempty(save_path)
-%     save(save_path,'-struct','output')
-% end
-% end
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % get_pairing_stats
 function output = get_pairing_stats(mouse_transients,mouse_paired_transients,varargin)
@@ -531,6 +599,7 @@ for e = 1:numel(evs)
     for r = 1:numel(roi_fields)
         roi_field = roi_fields{r};
         if ~isempty(mouse_paired_transients.(evs{e}).(roi_field))
+            % ignore peri-reward period
             filt_ch1 = ~(mouse_transients.(roi_field).(ch1).(sign1).last_rew_del <= rew_ignore | ...
                 mouse_transients.(roi_field).(ch1).(sign1).last_rew_con <= rew_ignore);       
             filt_ch2 = ~(mouse_transients.(roi_field).(ch2).(sign2).last_rew_del <= rew_ignore | ...
@@ -575,6 +644,88 @@ end
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% get_null_pairing_stats
+function output = get_null_pairing_stats(mouse_transients,mouse_null_paired_transients,varargin)
+
+%%%  parse optional inputs %%%
+ip = inputParser;
+ip.addParameter('channel_names',{'ACh','DA'});  % which DF/F field to use
+ip.addParameter('rew_ignore',6);                % ignore transients within 6s of rew deliv or consump
+ip.addParameter('save_path',[]);                % if supplied, will save pairing stats
+
+ip.parse(varargin{:});
+for j=fields(ip.Results)'
+    eval([j{1} '=ip.Results.' j{1} ';']);
+end
+
+% setup
+roi_fields = fieldnames(mouse_transients); 
+it_fields = fieldnames(mouse_null_paired_transients);
+evs = fieldnames(mouse_null_paired_transients.(it_fields{1}));
+
+% initialize
+output = struct;
+
+for e = 1:numel(evs)
+    ev_info = strsplit(evs{e},'_');
+    ch1 = ev_info{1};
+    sign1 = ev_info{2};
+    ch2 = ev_info{3};
+    sign2 = ev_info{4};
+    for r = 1:numel(roi_fields)
+        roi_field = roi_fields{r};
+%         output.(evs{e}).(roi_field).tr_idx = cell(numel(it_fields),1);
+%         output.(evs{e}).(roi_field).mag = cell(numel(it_fields),1);
+%         output.(evs{e}).(roi_field).lat = cell(numel(it_fields),1);
+        output.(evs{e}).(roi_field).lat_mad = nan(numel(it_fields),1);
+        output.(evs{e}).(roi_field).lat_mode = nan(numel(it_fields),1);
+        output.(evs{e}).(roi_field).prob = nan(numel(it_fields),2);
+
+        for i = 1:numel(it_fields)
+            it_field = it_fields{i};
+
+            
+            if ~isempty(mouse_null_paired_transients.(it_field).(evs{e}).(roi_field))
+                % ignore peri-reward period
+                filt_ch1 = ~(mouse_transients.(roi_field).(ch1).(sign1).last_rew_del <= rew_ignore | ...
+                    mouse_transients.(roi_field).(ch1).(sign1).last_rew_con <= rew_ignore);       
+                filt_ch2 = ~(mouse_transients.(roi_field).(ch2).(sign2).last_rew_del <= rew_ignore | ...
+                    mouse_transients.(roi_field).(ch2).(sign2).last_rew_con <= rew_ignore);
+
+                % paired transients
+                % note only need to filter on one channel; other was
+                % date-scrambled
+                eligible_pairs = mouse_null_paired_transients.(it_field).(evs{e}).(roi_field);
+                eligible_pairs = eligible_pairs(filt_ch1(eligible_pairs(:,1))==1,:); 
+                output.(evs{e}).(roi_field).tr_idx{i} = eligible_pairs;
+
+%                 % get magnitudes
+%                 output.(evs{e}).(roi_fields{r}).mag{i} = [ ...
+%                     mouse_transients.(roi_field).(ch1).(sign1).tr_magnitude(eligible_pairs(:,1)),...
+%                     mouse_transients.(roi_field).(ch2).(sign2).tr_magnitude(eligible_pairs(:,2))];           
+
+                % get latencies
+                these_lat = mouse_transients.(roi_field).(ch2).(sign2).tr_peak(eligible_pairs(:,2))-...
+                    mouse_transients.(roi_field).(ch1).(sign1).tr_peak(eligible_pairs(:,1));           
+%                 output.(evs{e}).(roi_fields{r}).lat{i} = these_lat;
+                output.(evs{e}).(roi_field).lat_mad(i) = mad(these_lat,1);
+                output.(evs{e}).(roi_field).lat_mode(i) = mode(these_lat);
+
+                % probabilities
+                output.(evs{e}).(roi_fields{r}).prob(i,:) = [...
+                    size(eligible_pairs,1) / sum(filt_ch1),...
+                    size(eligible_pairs,1) / sum(filt_ch2)];                
+
+            end
+        end
+    end
+end
+if ~isempty(save_path)
+    save(save_path,'-struct','output')
+end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % get_a null pairing
 function output = get_null_transient_pairs(mouse_transients,n_it,varargin)
 
@@ -596,21 +747,14 @@ roi_fields = fieldnames(mouse_transients);
 channel_names = channel_names;
 n_update = n_update;
 
-% get all the possible dates
-all_dates = struct2cell(structfun(@(x) unique([...
-    x.(channel_names{1}).pos.exp_dir;...
-    x.(channel_names{1}).neg.exp_dir;...
-    x.(channel_names{2}).pos.exp_dir;...
-    x.(channel_names{2}).neg.exp_dir]),...
-    mouse_transients,'UniformOutput',false));
-all_dates = unique(vertcat(all_dates{:}));
-
+% initialize saved struct if we need to
 output = load_if_exist(save_path);
 it_to_do = setdiff(arrayfun(@(x) ['it_' sprintf('%05d',x)],vec(1:n_it),'UniformOutput',false),fieldnames(output));
-% initialize saved struct if we need to
 if ~isempty(save_path) && isempty(fieldnames(output)) 
     save(save_path,'-struct','output')
 end
+
+% run
 if ~isempty(it_to_do)
     disp('   getting null transient pairing')
 
@@ -619,14 +763,16 @@ if ~isempty(it_to_do)
         parfor i = 1:n_update
             this_it = (j-1)*n_update+i;
             disp(this_it)
-            % remap the dates on the second channel
-            shuffle_dates = all_dates(randperm(numel(all_dates)));
+            
             it_transients = mouse_transients;
             for r = 1:numel(roi_fields)        
                 for s = 1:numel(signs)
                     these_exp_dir = it_transients.(roi_fields{r}).(channel_names{2}).(signs{s}).exp_dir;
+                    % shuffle the dates on the second channel
+                    exp_dates = unique(these_exp_dir);
+                    shuffle_dates = exp_dates(randperm(numel(exp_dates)));
                     if ~isempty(these_exp_dir)
-                        [~,date_sh_idx] = ismember(these_exp_dir,all_dates);
+                        [~,date_sh_idx] = ismember(these_exp_dir,exp_dates);
                         it_transients.(roi_fields{r}).(channel_names{2}).(signs{s}).exp_dir = shuffle_dates(date_sh_idx);
                     end
                 end

@@ -9,6 +9,8 @@ mice = struct2cell(structfun(@(x) x(:),coh_mice,'UniformOutput',false));
 mice = vertcat(mice{:});
 % let's use all fibers in striatum for this; can further reduce later
 fib = cohort_fib_table(data_dir,mice,'inclusion_field','in_striatum'); 
+fib2 = cohort_fib_table(data_dir,mice); 
+
 % load corr hotspot
 save_dir1 = fullfile(data_dir,'results','1_cross_corr');
 cc_map_info = load(fullfile(save_dir1,'map_results.mat'),'info','str');
@@ -32,27 +34,147 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 2. estimate cross correlation via repeated random split halfs
 rew_cc_DA = load_if_exist(fullfile(save_dir3,'rew_cc_DA.mat'));
-if sum(~ismember(mice,fieldnames(rew_cc_DA)))>0
+% trial-by-trial ACh vs trial-by-trial DA peak 
+if sum(~ismember(cellfun(@(x) get_mouse_field(x),mice,'UniformOutput',false),fieldnames(rew_cc_DA)))>0
     disp('estimating repeated half-split DA peak corr')
     rew_cc_DA = get_rep_split_peak_rew_cc(rew_data,'DA',5000,...
         'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',0:18,'do_null',1,...
         'save_after_each_mouse',fullfile(save_dir3,'rew_cc_DA.mat')); 
     save(fullfile(save_dir3,'rew_cc_DA.mat'),'-struct','rew_cc_DA','-v7.3')
 end
-% trial-by-trial DA w trial-by-trial ACh peak 
-rew_cc_ACh = load_if_exist(fullfile(save_dir3,'rew_cc_ACh.mat'));
-if sum(~ismember(mice,fieldnames(rew_cc_ACh)))>0  
-    disp('estimating repeated half-split ACh peak corr')
-    rew_cc.rep_split.ACh = get_rep_split_peak_rew_cc(rew_data,'ACh',5000,...
-        'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',-9:9,'do_null',1,...
-        'save_after_each_mouse',fullfile(save_dir3,'rew_cc_ACh.mat'));        
-    save(fullfile(save_dir3,'rew_cc_ACh.mat'),'-struct','rew_cc_ACh','-v7.3')    
-end
+% % trial-by-trial DA vs trial-by-trial ACh peak 
+% rew_cc_ACh = load_if_exist(fullfile(save_dir3,'rew_cc_ACh.mat'));
+% if sum(~ismember(cellfun(@(x) get_mouse_field(x),mice,'UniformOutput',false),fieldnames(rew_cc_ACh)))>0
+%     disp('estimating repeated half-split ACh peak corr')
+%     rew_cc.rep_split.ACh = get_rep_split_peak_rew_cc(rew_data,'ACh',5000,...
+%         'eta_idx',-18:27,'corr_idx',0:9,'ref_idx_of_int',-9:9,'do_null',1,...
+%         'save_after_each_mouse',fullfile(save_dir3,'rew_cc_ACh.mat'));        
+%     save(fullfile(save_dir3,'rew_cc_ACh.mat'),'-struct','rew_cc_ACh','-v7.3')    
+% end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 3. compile data
-rew_cc_results = load_if_exist(fullfile(save_dir3,'rew_cc_results.mat'));
+% 3. compile data for maps: all striatum
+if exist(fullfile(save_dir3,'map_results.mat'),'file')
+    map_results = load(fullfile(save_dir3,'map_results.mat'));
+else
+    map_results = load(fullfile(save_dir1,'map_results.mat'),'info','str'); % all str, which has sig rew resp
+    % compile results
+    channel_names = {'DA'};    
+    rew_cc_results.DA = compile_rew_cc(rew_cc_DA,rew_data,fib);
+    rew_cc_results.ACh = compile_rew_cc(rew_cc_ACh,rew_data,fib);
+    for c = 1:numel(channel_names)
+        channel_name = channel_names{c};
 
+        % ALL STRIATUM
+        map_results.vals.(channel_name).lag = rew_cc_results.(channel_name).lag_mode(:,1);
+        map_results.vals.(channel_name).r = rew_cc_results.(channel_name).r;
+        map_results.vals.(channel_name).sig = rew_cc_results.(channel_name).r_p<0.05;
+        % interp: r
+        tmp = get_activity_map_interp(map_results.vals.(channel_name).r,fib, map_results.str.info.voxel_size,...
+            'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+            'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+            'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],'incl_plot_info',1);
+        map_results.interp.(channel_name).vol.r = tmp.vol_01.interp;	% interpolated volume (z)
+        map_results.interp.(channel_name).n = tmp.vol_01.n_mice;   % #mice contrib to each voxel; only need once per ev
+        map_results.interp.(channel_name).F = tmp.vol_01.interp_F; % interpolant function; only need once per ev
+        % interp: lag
+        lag_vals = map_results.vals.(channel_name).lag;
+        lag_vals(map_results.vals.(channel_name).sig==0) = nan;
+        tmp = get_activity_map_interp(lag_vals, fib, map_results.str.info.voxel_size,...
+            'AP_range',[min(map_results.str.info.AP) max(map_results.str.info.AP)],...
+            'ML_range',[min(map_results.str.info.ML) max(map_results.str.info.ML)],...
+            'DV_range',[min(map_results.str.info.DV) max(map_results.str.info.DV)],'incl_plot_info',0);
+        map_results.interp.(channel_name).vol.lag = tmp.vol_01.interp;
+        save(fullfile(save_dir3,'map_results.mat'),'-struct','map_results')
+    end
+end
+
+% MORE RESTRICTED
+if exist(fullfile(save_dir3,'map_results2.mat'),'file')
+    map_results2 = load(fullfile(save_dir3,'map_results2.mat'));
+else
+    map_results2 = load(fullfile(save_dir1,'map_results.mat'),'info','str'); % more restricted
+    % compile results
+    channel_names = {'DA'};
+    rew_cc_results.DA = compile_rew_cc(rew_cc_DA,rew_data,fib);
+    rew_cc_results.ACh = compile_rew_cc(rew_cc_ACh,rew_data,fib);
+    for c = 1:numel(channel_names)
+        channel_name = channel_names{c};        
+        map_results2.vals.(channel_name).lag = rew_cc_results.(channel_name).lag_mode(fib.included==1,1);
+        map_results2.vals.(channel_name).r = rew_cc_results.(channel_name).r(fib.included==1);
+        map_results2.vals.(channel_name).sig = rew_cc_results.(channel_name).r_p(fib.included==1)<0.05;
+        % interp: r
+        tmp = get_activity_map_interp(map_results2.vals.(channel_name).r,fib2, map_results2.str.info.voxel_size,...
+            'AP_range',[min(map_results2.str.info.AP) max(map_results2.str.info.AP)],...
+            'ML_range',[min(map_results2.str.info.ML) max(map_results2.str.info.ML)],...
+            'DV_range',[min(map_results2.str.info.DV) max(map_results2.str.info.DV)],'incl_plot_info',1);
+        map_results2.interp.(channel_name).vol.r = tmp.vol_01.interp;	% interpolated volume (z)
+        map_results2.interp.(channel_name).n = tmp.vol_01.n_mice;   % #mice contrib to each voxel; only need once per ev
+        map_results2.interp.(channel_name).F = tmp.vol_01.interp_F; % interpolant function; only need once per ev
+        % interp: lag
+        lag_vals = map_results2.vals.(channel_name).lag;
+        lag_vals(map_results2.vals.(channel_name).sig==0) = nan;
+        tmp = get_activity_map_interp(lag_vals, fib2, map_results2.str.info.voxel_size,...
+            'AP_range',[min(map_results2.str.info.AP) max(map_results2.str.info.AP)],...
+            'ML_range',[min(map_results2.str.info.ML) max(map_results2.str.info.ML)],...
+            'DV_range',[min(map_results2.str.info.DV) max(map_results2.str.info.DV)],'incl_plot_info',0);
+        map_results2.interp.(channel_name).vol.lag = tmp.vol_01.interp;
+        save(fullfile(save_dir3,'map_results2.mat'),'-struct','map_results2')
+    end
+end
+
+    
+% let's plot
+channel_names = {'DA'};    
+for c = 1:numel(channel_names)
+    channel_name = channel_names{c};
+    % r
+    this_vol = map_results.interp.(channel_name).vol.r;
+    this_vol(map_results.interp.(channel_name).n<2) = nan;
+    mm = prctile(abs(this_vol(:)),99.5);
+    plot_smooth_maps(this_vol,map_results.str,'cmap_bounds',[-mm mm],'cmap_levels',[]);
+    sgtitle('Unpred Rew: DA \rightarrow ACh corr')
+    saveas(gcf,fullfile(save_dir3,'figs','DA_r_1.png'),'png')
+    
+    % r contour
+    plot_smooth_maps(this_vol,map_results.str,'cmap_levels',10,'cmap_option','gray','cmap_bounds',prctile(this_vol(:),[5 95]));
+    sgtitle('Unpred Rew: DA \rightarrow ACh corr')
+    saveas(gcf,fullfile(save_dir3,'figs','DA_rc_1.png'),'png')
+    
+    % lag
+    this_vol = map_results.interp.(channel_name).vol.lag;
+    this_vol(map_results.interp.(channel_name).n<2) = nan;
+    mm = prctile(abs(this_vol(:)),99.5);
+    plot_smooth_maps(this_vol,map_results.str,'cmap_bounds',[0 9],'cmap_option','parula','cmap_levels',[]);
+    sgtitle('Unpred Rew: DA \rightarrow ACh lag')
+    saveas(gcf,fullfile(save_dir3,'figs','DA_lag_1.png'),'png')
+end
+
+% MORE RESTRICTED
+for c = 1:numel(channel_names)
+    channel_name = channel_names{c};
+    % r
+    this_vol = map_results2.interp.(channel_name).vol.r;
+    this_vol(map_results2.interp.(channel_name).n<2) = nan;
+    mm = prctile(abs(this_vol(:)),99.5);
+    plot_smooth_maps(this_vol,map_results2.str,'cmap_bounds',[-mm mm],'cmap_levels',[]);
+    sgtitle('Unpred Rew: DA \rightarrow ACh corr')
+    saveas(gcf,fullfile(save_dir3,'figs','DA_r_2.png'),'png')
+
+    % r contour
+    plot_smooth_maps(this_vol,map_results2.str,'cmap_levels',10,'cmap_option','gray','cmap_bounds',prctile(this_vol(:),[5 95]));
+    sgtitle('Unpred Rew: DA \rightarrow ACh corr')
+    saveas(gcf,fullfile(save_dir3,'figs','DA_rc_2.png'),'png')
+    
+    % lag
+    this_vol = map_results2.interp.(channel_name).vol.lag;
+    this_vol(map_results2.interp.(channel_name).n<2) = nan;
+    mm = prctile(abs(this_vol(:)),99.5);
+    plot_smooth_maps(this_vol,map_results2.str,'cmap_bounds',[0 9],'cmap_option','parula','cmap_levels',[]);
+    sgtitle('Unpred Rew: DA \rightarrow ACh lag')
+    saveas(gcf,fullfile(save_dir3,'figs','DA_lag_2.png'),'png')
+
+end
 
 % 
 % 
@@ -437,8 +559,44 @@ function results = get_rep_split_peak_rew_cc(rew_data,ref_channel,rep_it,varargi
     end
 end
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% compile_rew_cc
+function results = compile_rew_cc(rew_cc_data,rew_data,fib,varargin)
 
-
+%%%  parse optional inputs %%%
+ip = inputParser;
+ip.addParameter('sweep_dir','AB'); % default is AB (lag from splitA, corr from splitB)
+ip.parse(varargin{:});
+for j=fields(ip.Results)'
+    eval([j{1} '=ip.Results.' j{1} ';']);
+end
+% initialize
+results = struct;
+results.lag_mode = nan(size(fib,1),2);
+results.r = nan(size(fib,1),1);
+results.r_p = nan(size(fib,1),1);
+results.sig.DA = nan(size(fib,1),2);
+results.sig.ACh = nan(size(fib,1),2);
+% setup
+mice = unique(fib.mouse);
+for m = 1:numel(mice)
+    mouse = mice{m};        
+    mouse_idx = find(strcmp(fib.mouse,mouse));
+    n = size(rew_cc_data.(get_mouse_field(mouse)).lag_idx.(sweep_dir),1);
+    % lag: mode and weight
+    [this_mode,this_count] = mode(rew_cc_data.(get_mouse_field(mouse)).lag_idx.(sweep_dir));
+    results.lag_mode(mouse_idx,:) = [vec(this_mode)-1 vec(this_count/n)];
+    % correlation
+    this_r = mean(rew_cc_data.(get_mouse_field(mouse)).r.(sweep_dir));
+    this_r_p = sum(rew_cc_data.(get_mouse_field(mouse)).null.max_abs_r.(sweep_dir(2))>abs(this_r))/n;
+    results.r(mouse_idx) = vec(this_r);
+    results.r_p(mouse_idx) = vec(this_r_p);
+    % significant dynamic
+    results.sig.DA(mouse_idx,:) = rew_data.(get_mouse_field(mouse)).DA.sig_cols;
+    results.sig.ACh(mouse_idx,:) = rew_data.(get_mouse_field(mouse)).ACh.sig_cols;
+end
+end
+    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % pav2cue_getTrialTimes
 %

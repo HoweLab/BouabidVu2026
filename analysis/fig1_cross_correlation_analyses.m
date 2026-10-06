@@ -8,7 +8,7 @@ sensor_cohort = 1; % set to 1 to run sensor mice, 0 to run control cohort
 sensor_mice = struct;
 sensor_mice.cohort1 =  {'UG27','UG28','UG29','UG30','UG31'};
 % sensor_mice.cohort2 = {'AD1','AD2','AD3'};
-% sensor_mice.cohort5 = {'609','610','813','815','875'}; % note: 816 had a weird loc before; 319 has weird data. keep both for now
+% sensor_mice.cohort5 = {'609','610','813','815','875'}; % note: 816 had a weird loc before (keeping for now)
 
 % cohort mice
 control_mice = struct;
@@ -421,7 +421,7 @@ function cc_lags_distr = get_cross_corr_lag_distr(mice,fib,data_dir,lag,...
     end
     
     % if we need to compile the data
-%     if ~isfield(cc_lags_distr.lag_hist,output_fields{end})
+    if ~isfield(cc_lags_distr.lag_hist,output_fields{end})
         % initialize
         for f = 1:numel(output_fields)                
             cc_lags_distr.lag_hist.(output_fields{f}) = [];
@@ -487,7 +487,7 @@ function cc_lags_distr = get_cross_corr_lag_distr(mice,fib,data_dir,lag,...
         if ~isempty(save_dir)
             save(fullfile(save_dir,'cross_corr_r_lag_results.mat'),'-struct','cc_lags_distr')
         end
-%     end
+    end
     
     % fit overall GM
 %     if ~isfield(cc_lags_distr,'lag_gm')
@@ -759,6 +759,7 @@ function session_cross_corrs = get_session_cross_corrs(mouse,fib,data_dir,lag,va
     ip.addParameter('Fc_field','Fc');           % which DF/F field to use
     ip.addParameter('Fc_artifact_mask',[]);     % the field which contains the artifact mask; leave blank if N/A
     ip.addParameter('datafile_suffix','');      % datafile format [mouse]_[expdir][datafile_suffix].mat; default '', assume format MOUSE_EXPDIR.mat 
+    ip.addParameter('require_sig',0);           % require sig (not necessary for control mice)
     ip.parse(varargin{:});
     for j=fields(ip.Results)'
         eval([j{1} '=ip.Results.' j{1} ';']);
@@ -777,7 +778,7 @@ function session_cross_corrs = get_session_cross_corrs(mouse,fib,data_dir,lag,va
         % if these are control mice and we need to change to ACh and DA fieldnames
         if ~isfield(data,'DA') || ~isfield(data,'ACh') 
             data = rename_to_ach_da_data_fields(data);
-        end
+        end        
         DA = data.DA.(Fc_field)(:,rois_to_do);
         ACh = data.ACh.(Fc_field)(:,rois_to_do);
         if ~isempty(Fc_artifact_mask)
@@ -877,8 +878,8 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % get_session_cross_corr: get cross corr for a single session
-function session_cross_corr = get_session_cross_corr(DA,ACh,lag)
-    
+function session_cross_corr = get_session_cross_corr(DA,ACh,varargin)
+        
     session_cross_corr = struct;
     session_cross_corr.lag = -lag:lag;
     session_cross_corr.r = nan(size(DA,2),numel(session_cross_corr.lag));
@@ -923,7 +924,6 @@ function output = get_session_cross_corr_stats(session_cross_corrs,alpha_val)
     output.n = size(session_cross_corrs.r,3)*ones(size(mean_r,1),1);
     output.sig = sig_r;
     
-
     % significant max: require significantly greater than null and is a local max   
     candidate_r = islocalmax(mean_r,2) & sig_r==1 & mean_r>0;
     eligible_local_max = mean_r;
@@ -975,6 +975,7 @@ end
 % max/min correlations, lags, and significance, based on p_value and p_thresh
 function output = get_cc_lag_sample_stats(mouse_data,p_thresh,lags)
 
+    % initialize
     output = struct;
     
     % significance
