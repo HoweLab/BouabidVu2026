@@ -40,16 +40,20 @@ function output = rand_volume(input_size,volume_size,varargin)
     end
     output = nan(volume_size,n);
     parfor i = 1:n
-        k = 0;
+        
+        max_tries = 100;
         output_vol = [];
-        while isempty(output_vol)
-            output_vol = get_rand_vol(input_vol,volume_size);                        
-            k = k + 1;
-            if k > 100
-                disp(['  uh oh! cannot get random vol'])
+        for k = 1:max_tries
+            output_vol = get_rand_vol(input_vol,volume_size);
+            if ~isempty(output_vol)
+                break; 
             end
         end
-        output(:,i) = find(output_vol==1);
+        if isempty(output_vol)
+            error('rand_volume:noVolume','could not get random vol')
+        else        
+            output(:,i) = find(output_vol==1);
+        end
         if rem(i,100)==0 % display every 100
             disp(i)
         end
@@ -76,7 +80,7 @@ function output_vol = get_rand_vol(input_vol,volume_size)
         candidate_voxels = find((imdilate(output_vol,strel('sphere',1))-output_vol)==1);
         candidate_voxels = intersect(input_vox,candidate_voxels);
         n_samp = min([volume_size-sum(output_vol(:)) randi(floor(numel(candidate_voxels)/2))]);
-        output_vol(candidate_voxels(randsample(numel(candidate_voxels),n_samp,'false'))) = 1;
+        output_vol(candidate_voxels(randsample(numel(candidate_voxels),n_samp,false))) = 1;
     end
 end
     
