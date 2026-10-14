@@ -114,16 +114,18 @@ for i = 1:size(value_array,2)
     
     % group mean & support for each voxel
     if ~dist_weighting
-         output.(['vol_' sprintf('%02d',i)]).interp = reshape(mean(all_vol,2,'omitnan'),numel(y),numel(x),numel(z));
-         output.(['vol_' sprintf('%02d',i)]).support = reshape(sum(~isnan(mouse_interp),2),numel(y),numel(x),numel(z));
+         output.(['vol_' sprintf('%02d',i)]).interp = mean(mouse_interp,4,'omitnan');
+         output.(['vol_' sprintf('%02d',i)]).support = sum(~isnan(mouse_interp),4);
+         output.(['vol_' sprintf('%02d',i)]).mouse_support = ~isnan(mouse_interp);
     else
         group_weight = sum(mouse_weight,4);
         mouse_interp_0 = mouse_interp;
         mouse_interp_0(mouse_weight==0) = 0; % avoid nan*0 = nan
-        group_vol = sum(mouse_weight.*mouse_interp_0, 2)./group_weight;
+        group_vol = sum(mouse_weight.*mouse_interp_0, 4)./group_weight;
         group_vol(group_weight==0) = nan; % nan        
         output.(['vol_' sprintf('%02d',i)]).interp = group_vol;
         output.(['vol_' sprintf('%02d',i)]).support = group_weight;
+        output.(['vol_' sprintf('%02d',i)]).mouse_support = mouse_weight;
     end
     
     if incl_projections
