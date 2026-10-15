@@ -29,7 +29,7 @@ end
 
 % mask
 if isempty(mask)
-    mask = ones(size(moran_map));
+    mask = ones(size(moran_struct.moran));
 end
 
 % corresponding percentile

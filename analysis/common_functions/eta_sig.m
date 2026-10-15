@@ -33,7 +33,7 @@ end
 this_sem = eta_struct.std/sqrt(size(eta_struct.activity,3));
 if sig_alpha == 1
     if ~isfield(eta_struct.bootstrap,'meansU1')
-        eta_struct.bootstrap.meansL1 = quantile(eta_struct.bootstrap.means,.05,3);
+        eta_struct.bootstrap.meansL1 = quantile(eta_struct.bootstrap.means,.005,3);
         eta_struct.bootstrap.meansU1 = quantile(eta_struct.bootstrap.means,.995,3);
     end
     this_upper = eta_struct.bootstrap.meansU1;
