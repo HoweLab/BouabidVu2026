@@ -59,7 +59,7 @@ end
 
 % make sure mouse name is cellstr
 if ischar(fiber_table.mouse)
-    fiber_table.mouse = cellstr(fiber_table,mouse);
+    fiber_table.mouse = cellstr(fiber_table.mouse);
 end
 
 % initialize
@@ -102,7 +102,7 @@ for i = 1:size(value_array,2)
           
             % distance weighting
             if dist_weighting
-                [~, d] = knnsearch(fib_coord, [xx(:) yy(:) zz(:)]);   % distance to this mouse's nearest fiber
+                [~, d] = knnsearch(fib_coord(mouse_idx,:), [xx(:) yy(:) zz(:)]);   % distance to this mouse's nearest fiber
                 dnear(:,:,:,m) = reshape(d,size(dnear,1),size(dnear,2),size(dnear,3));
                 w = exp(-0.5 * (d / mouse_dist_sigma).^2);
                 w(d > hard_dist_cutoff) = 0;
