@@ -91,7 +91,7 @@ end
 % outcome in clear winners, just if 2 local maxes are the same distance 
 % from the trg avg max/min)
 if isempty(local_transient_window)
-    local_transient_window = floor(sum(~isnan(ref_raster(1,:,1)))/2);
+    local_transient_window = floor(sum(~isnan(ref_raster(:,1,1)))/2);
 end
 % make a new raster centered on the triggered average max/min
 loc_idx_i = repmat(vec(-local_transient_window:local_transient_window),...
@@ -117,17 +117,22 @@ closest_local_tr = local_tr.*(closest_local_tr+ref_raster_local);
 closest_local_tr(closest_local_tr==0) = nan;
 
 if polarity == 1
-    [~,ref_tr_idx] = max(closest_local_tr,[],1);
+    [tr_val,ref_tr_idx] = max(closest_local_tr,[],1);
     [~,closest_ref_tr_idx] = max(closest_local_tr,[],1,'linear');
 else
-    [~,ref_tr_idx] = min(closest_local_tr,[],1);
+    [tr_val,ref_tr_idx] = min(closest_local_tr,[],1);
     [~,closest_ref_tr_idx] = min(closest_local_tr,[],1,'linear');
 end
-% get max values and idx   
+% trials with no local max/min in the window (all-nan column -> max returns idx 1)
+no_tr_3d = isnan(tr_val); % 1 x ROIs x trials
+no_tr = transpose(squeeze(no_tr_3d));
+% get max values and idx
 ref_tr_mag = transpose(squeeze(ref_raster_local(closest_ref_tr_idx)));
+ref_tr_mag(no_tr) = nan; % excluded from correlations
 ref_tr_idx = transpose(squeeze(ref_tr_idx));
 % center it - this gives the position relative to the avg trg avg idx
-rel_ref_tr_idx = ref_tr_idx-ceil(numel(local_tr_ramp)/2); 
+rel_ref_tr_idx = ref_tr_idx-ceil(numel(local_tr_ramp)/2);
+rel_ref_tr_idx(no_tr) = 0; % placeholder so indexing below stays valid; nan'd after
 
 % get indices
 corr_idx_i = repmat(vec(1:size(corr_raster,1)),1,size(corr_raster,2),size(corr_raster,3));
@@ -141,6 +146,7 @@ wind_idx_tp_centered(wind_idx_tp_centered<1 | wind_idx_tp_centered>numel(input_i
 centered_ind = sub2ind(size(corr_raster),wind_idx_tp_centered(:),corr_idx_j(:),corr_idx_k(:));
 corr_raster_centered = nan(size(wind_idx_tp_centered));
 corr_raster_centered(~isnan(centered_ind)) = corr_raster(centered_ind(~isnan(centered_ind)));
+corr_raster_centered(repmat(no_tr_3d,size(corr_raster_centered,1),1,1)) = nan; % drop trials w/o transient
 % store some things for after
 corr_raster_centered_all = corr_raster_centered; 
 % corr_raster_centered_orig = nan(size(wind_idx_tp_centered));
@@ -149,6 +155,7 @@ corr_raster_centered_all = corr_raster_centered;
 % center the ref raster
 ref_raster_centered = nan(size(wind_idx_tp_centered));
 ref_raster_centered(~isnan(centered_ind)) = ref_raster_orig(centered_ind(~isnan(centered_ind)));
+ref_raster_centered(repmat(no_tr_3d,size(ref_raster_centered,1),1,1)) = nan; % drop trials w/o transient
 
 
 % now get the part of the corr raster we want
@@ -180,6 +187,7 @@ output.corr_raster.mu = nanmean(corr_raster_centered,3);
 output.corr_raster.sem = nanstd(corr_raster_centered,[],3)./sqrt(size(corr_raster_centered,3));
 output.ref_raster.idx = ref_idx_of_int;
 output.ref_raster.avg_tr_idx = avg_tr_idx;
+rel_ref_tr_idx(no_tr) = nan; % no transient in window
 output.ref_raster.trial_tr_idx = rel_ref_tr_idx; % relative to avg_tr_idx
 output.ref_raster.mu = nanmean(ref_raster,3);
 output.ref_raster.sem = nanstd(ref_raster,[],3)./sqrt(size(ref_raster,3));
